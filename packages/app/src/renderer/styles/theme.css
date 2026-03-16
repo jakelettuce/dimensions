@@ -1,0 +1,73 @@
+/*
+ * Dimensions Design Tokens
+ * ========================
+ * Every color, spacing, radius, and shadow used by the app chrome.
+ * Change these to re-theme the entire application.
+ *
+ * Widgets/scenes have their OWN theming via scene meta.json —
+ * these tokens are for the app shell only.
+ */
+
+:root {
+  /* ── Colors ── */
+  --color-bg-primary: #0a0a0a;
+  --color-bg-secondary: #141414;
+  --color-bg-tertiary: #1e1e1e;
+  --color-bg-elevated: #252525;
+  --color-bg-hover: #2a2a2a;
+
+  --color-border: #2e2e2e;
+  --color-border-subtle: #1e1e1e;
+  --color-border-focus: #7c3aed;
+
+  --color-text-primary: #e5e5e5;
+  --color-text-secondary: #999999;
+  --color-text-muted: #666666;
+
+  --color-accent: #7c3aed;
+  --color-accent-hover: #6d28d9;
+  --color-accent-subtle: rgba(124, 58, 237, 0.15);
+
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+  --color-error: #ef4444;
+
+  /* ── Spacing ── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* ── Radii ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+
+  /* ── Layout ── */
+  --topbar-height: 40px;
+  --editor-panel-width: 420px;
+  --palette-width: 560px;
+
+  /* ── Transitions ── */
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --easing: cubic-bezier(0.4, 0, 0.2, 1);
+}

@@ -1,0 +1,59 @@
+import type { DimensionsSDK } from './types'
+
+export function createMockSDK(overrides?: Partial<DimensionsSDK>): DimensionsSDK {
+  return {
+    scene: {
+      id: () => 'mock-scene',
+      title: () => 'Mock Scene',
+    },
+    kv: {
+      get: async () => null,
+      set: async () => {},
+      delete: async () => {},
+      list: async () => [],
+    },
+    assets: {
+      upload: async () => 'asset://mock',
+      resolve: async () => '',
+      list: async () => [],
+    },
+    fetch: async () => ({ status: 200, headers: {}, body: '' }),
+    ws: {
+      connect: async () => ({
+        send: () => {},
+        on: () => {},
+        close: () => {},
+      }),
+    },
+    env: {
+      get: async () => null,
+    },
+    secrets: {
+      get: async () => null,
+      set: async () => {},
+      delete: async () => {},
+    },
+    editing: {
+      setWidgetBounds: async () => {},
+      getWidgetBounds: async () => ({ x: 0, y: 0, width: 100, height: 100 }),
+      selectWidget: async () => {},
+    },
+    emit: () => {},
+    on: () => {},
+    navigate: {
+      to: () => {},
+      back: () => {},
+      forward: () => {},
+    },
+    theme: {
+      get: async () => ({ background: '#0a0a0a', accent: '#7c3aed' }),
+      onChange: () => {},
+    },
+    clipboard: {
+      read: async () => '',
+      write: async () => {},
+    },
+    notify: async () => {},
+    ...overrides,
+  }
+}

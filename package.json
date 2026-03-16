@@ -1,0 +1,12 @@
+{
+  "name": "dimensions",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w packages/app",
+    "build": "npm run build -w packages/sdk && npm run build -w packages/app",
+    "lint": "eslint packages/*/src --ext .ts,.tsx"
+  }
+}
