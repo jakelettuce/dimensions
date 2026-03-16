@@ -50,13 +50,17 @@ You: using it 30 seconds later
 
 ```
 Main Process (Node.js, trusted)
-  ├── Window manager (multi-window, each independent)
+  ├── Window manager (multi-window, each fully independent)
   ├── Scene WCV (one sandboxed WebContentsView per window)
-  ├── Webportal WCV pool (pre-warmed for instant portal creation)
+  ├── Webportal manager
+  │   ├── Dual-WCV per portal (chrome WCV + content WCV)
+  │   ├── Multi-tab support with per-tab navigation state
+  │   ├── Pre-warmed WCV pool for instant portal creation
+  │   └── CSS injection (dom-ready) + extraction (for Claude Code context)
   ├── File watcher → esbuild → hot reload (~100ms)
   ├── Capability-gated IPC handlers
   ├── Global keyboard shortcuts (Cmd+E, Cmd+K, etc.)
-  ├── Terminal manager (node-pty, scoped per scene)
+  ├── Terminal manager (node-pty, login shell, scoped per scene)
   ├── dimensions:// protocol (navigation)
   ├── dimensions-asset:// protocol (static file serving)
   └── SQLite database (sql.js/WASM)
@@ -156,9 +160,13 @@ On first launch, the app creates `~/Dimensions/home/` with a starter scene. No s
 - Network requests proxied through main process, host-checked against manifest allowlist
 - Environment variables stored in OS keychain via `safeStorage`, never in files or SQLite
 - Path traversal blocked at every boundary (`assertPathWithin` on all file operations)
-- IPC channels explicitly whitelisted in preload scripts, data sanitized on every bridge crossing
+- IPC channels explicitly whitelisted in preload scripts, data sanitized on every bridge crossing (`__proto__`, `constructor`, `prototype` stripped)
+- Webportal content WCVs get **no preload and no SDK access** — fully isolated from the app. Chrome WCVs get a minimal preload for navigation commands only
+- Portal popups blocked via `setWindowOpenHandler` — external links open in default browser
+- Audio/video explicitly stopped before any WCV destruction (mute → pause → clear src)
 - Terminal PTY processes scoped to scene folder — no access outside `~/Dimensions/`
 - Global shortcuts guarded by focus check — don't fire when app isn't focused
+- GUI-launched PATH resolution ensures terminals work when opened from Finder/Dock
 
 ## Roadmap
 

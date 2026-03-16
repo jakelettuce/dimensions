@@ -613,18 +613,28 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 
 ## 13. Security
 
-| Layer | Isolation | Access |
-|---|---|---|
-| Renderer | Trusted | Full Electron APIs |
-| Scene WCV | Sandboxed | SDK via postMessage only |
-| Webportal WCVs | Most sandboxed | Web only, no SDK |
-| Widget iframes | `sandbox` attribute | SDK via postMessage only |
+### Trust Hierarchy
 
-- Every IPC handler checks widget ID validity + capability declaration
-- Path traversal blocked — widgets cannot access files outside their scene
-- Network requests proxied and host-checked
-- Env values never sent to widgets that haven't been granted access
-- Secrets stored in OS keychain, never in SQLite or files
+| Layer | Isolation | Access | Preload |
+|---|---|---|---|
+| Renderer | Trusted | App chrome, full IPC | Renderer preload (whitelisted channels) |
+| Scene WCV | Sandboxed | SDK via postMessage | Scene preload (SDK bridge) |
+| Portal chrome WCV | Sandboxed | Navigation commands only | Portal-chrome preload (minimal) |
+| Portal content WCV | Most sandboxed | Web only, zero app access | **None** |
+| Widget iframes | `sandbox` attribute | SDK via postMessage | Inherited from scene |
+
+### Enforced at Every Boundary
+
+- **Capability gating** — every SDK IPC handler checks widget ID validity + declared capabilities before executing
+- **IPC whitelisting** — preload scripts explicitly whitelist allowed channels; all data sanitized on bridge crossing (`__proto__`, `constructor`, `prototype` stripped via JSON round-trip)
+- **Path traversal** — `assertPathWithin()` on all file operations; widgets cannot access files outside their scene
+- **Network proxy** — all widget HTTP requests proxied through main process, host-checked against manifest `allowedHosts`
+- **Secrets encryption** — env variables and secrets stored via Electron `safeStorage` (OS keychain); never in SQLite, never in files, never logged
+- **Portal isolation** — content WCVs get no preload, no SDK, no postMessage bridge; popups blocked via `setWindowOpenHandler`, external links opened in default browser
+- **Media cleanup** — audio muted and all media paused/src-cleared before any WCV destruction (prevents phantom audio after app quit)
+- **Terminal scoping** — PTY processes spawned with cwd within `~/Dimensions/` only; PATH resolved from login shell at startup for GUI-launched instances
+- **Global shortcuts** — guarded by `BrowserWindow.getFocusedWindow()` check; don't fire when app is not focused
+- **WebPreferences lockdown** — all WCVs and BrowserWindows enforce: `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`, `webSecurity: true`, `webviewTag: false`, `experimentalFeatures: false`, `safeDialogs: true`
 
 ---
 
