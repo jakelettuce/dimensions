@@ -122,21 +122,28 @@ export function generateSceneHtml(scene: SceneState): string {
       const bundleUrl = baseBundleUrl ? `${baseBundleUrl}?${contextParams}` : ''
 
       if (!bundleUrl) {
-        return `<div class="widget-placeholder" data-widget-id="${entry.id}"
-          style="position:absolute;left:${x}px;top:${y}px;width:${width}px;height:${height}px;
-          background:#1e1e1e;border:1px dashed #444;display:flex;align-items:center;justify-content:center;
-          color:#666;font-family:monospace;font-size:12px;">
-          ${widget.manifest.title} (not built)
+        return `<div class="widget-wrapper" data-widget-id="${entry.id}"
+          style="left:${x}px;top:${y}px;width:${width}px;height:${height}px;">
+          <div class="drag-handle"></div>
+          <div class="widget-placeholder">
+            ${widget.manifest.title} (not built)
+          </div>
+          <div class="resize-handle"></div>
         </div>`
       }
 
-      return `<iframe
-        id="widget-${entry.id}"
-        data-widget-id="${entry.id}"
-        src="${bundleUrl}"
-        sandbox="allow-scripts allow-same-origin"
-        style="position:absolute;left:${x}px;top:${y}px;width:${width}px;height:${height}px;border:none;background:transparent;"
-      ></iframe>`
+      return `<div class="widget-wrapper" data-widget-id="${entry.id}"
+        style="left:${x}px;top:${y}px;width:${width}px;height:${height}px;">
+        <div class="drag-handle"></div>
+        <iframe
+          id="widget-${entry.id}"
+          data-widget-id="${entry.id}"
+          src="${bundleUrl}"
+          sandbox="allow-scripts allow-same-origin"
+          style="width:100%;height:100%;border:none;background:transparent;"
+        ></iframe>
+        <div class="resize-handle"></div>
+      </div>`
     })
     .join('\n    ')
 
@@ -160,7 +167,61 @@ export function generateSceneHtml(scene: SceneState): string {
       width: 100%;
       height: 100%;
     }
+    .widget-wrapper {
+      position: absolute;
+      border: 2px solid transparent;
+      border-radius: 4px;
+      overflow: visible;
+    }
+    .widget-wrapper.selected {
+      border-color: ${theme.accent};
+    }
+    .drag-handle {
+      display: none;
+      position: absolute;
+      top: -12px;
+      left: 0;
+      right: 0;
+      height: 12px;
+      background: ${theme.accent};
+      opacity: 0.7;
+      cursor: grab;
+      border-radius: 4px 4px 0 0;
+      z-index: 10;
+    }
+    .drag-handle:active { cursor: grabbing; }
+    .resize-handle {
+      display: none;
+      position: absolute;
+      bottom: -6px;
+      right: -6px;
+      width: 12px;
+      height: 12px;
+      background: ${theme.accent};
+      opacity: 0.7;
+      cursor: nwse-resize;
+      border-radius: 2px;
+      z-index: 10;
+    }
+    body.editing .widget-wrapper .drag-handle,
+    body.editing .widget-wrapper .resize-handle {
+      display: block;
+    }
+    /* Prevent iframe from stealing mouse events during drag/resize */
+    body.editing.interacting .widget-wrapper iframe {
+      pointer-events: none;
+    }
     .widget-placeholder {
+      width: 100%;
+      height: 100%;
+      background: #1e1e1e;
+      border: 1px dashed #444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #666;
+      font-family: monospace;
+      font-size: 12px;
       border-radius: 4px;
     }
   </style>
@@ -184,8 +245,94 @@ export function generateSceneHtml(scene: SceneState): string {
 
       window.dimensionsScene.onEditMode((editing) => {
         document.body.classList.toggle('editing', editing);
+        if (!editing) {
+          // Remove selected state from all wrappers when leaving edit mode
+          document.querySelectorAll('.widget-wrapper.selected').forEach(el => el.classList.remove('selected'));
+        }
       });
     }
+
+    // ── Edit-mode: selection, drag, resize ──
+
+    function postSdk(method, args) {
+      window.parent.postMessage({ type: 'sdk-call', callId: 0, method: method, args: args }, '*');
+    }
+
+    function getBoundsFromWrapper(wrapper) {
+      return {
+        x: parseFloat(wrapper.style.left) || 0,
+        y: parseFloat(wrapper.style.top) || 0,
+        width: parseFloat(wrapper.style.width) || 0,
+        height: parseFloat(wrapper.style.height) || 0,
+      };
+    }
+
+    document.addEventListener('mousedown', function(e) {
+      if (!document.body.classList.contains('editing')) return;
+
+      var target = e.target;
+      var wrapper = target.closest('.widget-wrapper');
+      if (!wrapper) return;
+
+      var widgetId = wrapper.dataset.widgetId;
+
+      // ── Drag handle ──
+      if (target.classList.contains('drag-handle')) {
+        e.preventDefault();
+        document.body.classList.add('interacting');
+        var startX = e.clientX;
+        var startY = e.clientY;
+        var origLeft = parseFloat(wrapper.style.left) || 0;
+        var origTop = parseFloat(wrapper.style.top) || 0;
+
+        function onMove(ev) {
+          var dx = ev.clientX - startX;
+          var dy = ev.clientY - startY;
+          wrapper.style.left = (origLeft + dx) + 'px';
+          wrapper.style.top = (origTop + dy) + 'px';
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.classList.remove('interacting');
+          postSdk('sdk:widget:bounds-update', [widgetId, getBoundsFromWrapper(wrapper)]);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        return;
+      }
+
+      // ── Resize handle ──
+      if (target.classList.contains('resize-handle')) {
+        e.preventDefault();
+        document.body.classList.add('interacting');
+        var startRX = e.clientX;
+        var startRY = e.clientY;
+        var origW = parseFloat(wrapper.style.width) || 0;
+        var origH = parseFloat(wrapper.style.height) || 0;
+
+        function onRMove(ev) {
+          var dw = ev.clientX - startRX;
+          var dh = ev.clientY - startRY;
+          wrapper.style.width = Math.max(40, origW + dw) + 'px';
+          wrapper.style.height = Math.max(40, origH + dh) + 'px';
+        }
+        function onRUp() {
+          document.removeEventListener('mousemove', onRMove);
+          document.removeEventListener('mouseup', onRUp);
+          document.body.classList.remove('interacting');
+          postSdk('sdk:widget:bounds-update', [widgetId, getBoundsFromWrapper(wrapper)]);
+        }
+        document.addEventListener('mousemove', onRMove);
+        document.addEventListener('mouseup', onRUp);
+        return;
+      }
+
+      // ── Selection (click on widget wrapper or iframe overlay) ──
+      document.querySelectorAll('.widget-wrapper.selected').forEach(function(el) { el.classList.remove('selected'); });
+      wrapper.classList.add('selected');
+      postSdk('sdk:widget:select', [widgetId]);
+    });
   </script>
 </body>
 </html>`

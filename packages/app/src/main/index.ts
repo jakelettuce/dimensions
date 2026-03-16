@@ -1,4 +1,6 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
+import fs from 'fs'
+import path from 'path'
 import { registerProtocols, registerProtocolHandlers } from './protocol'
 import { initDatabase, closeDatabase } from './database'
 import {
@@ -6,31 +8,31 @@ import {
   registerWindowIpcHandlers,
   loadSceneIntoWindow,
   getAllWindows,
+  findWindowByWebContentsId,
 } from './window-manager'
 import { ensureHomeScene } from './scene-manager'
 import type { WidgetState, SceneState } from './scene-manager'
 import type { DimensionsWindow } from './window-manager'
 import { registerCapabilities } from './capabilities/index'
+import { registerTerminalIpcHandlers } from './terminal'
+import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts'
 import { HOME_SCENE_DIR } from './constants'
+import { sanitizeIpcData } from './ipc-safety'
 
 // Protocols MUST be registered before app.ready — silently fails otherwise
 registerProtocols()
 
 app.whenReady().then(async () => {
-  // Initialize database (sql.js WASM)
   const db = await initDatabase()
 
-  // Register protocol handlers (after app.ready)
   registerProtocolHandlers()
-
-  // Register window-level IPC handlers
   registerWindowIpcHandlers()
+  registerTerminalIpcHandlers()
+  registerGlobalShortcuts()
 
-  // Register capability system — connects SDK IPC channels to capability modules
-  // These lookup functions search across all windows to find widget/scene/window by widgetId
+  // Register capability system
   registerCapabilities(
     db,
-    // getWidget: find a WidgetState by widgetId across all windows
     (widgetId: string): WidgetState | null => {
       for (const dimWin of getAllWindows()) {
         if (dimWin.currentScene) {
@@ -40,7 +42,6 @@ app.whenReady().then(async () => {
       }
       return null
     },
-    // getScene: find the SceneState that contains a widgetId
     (widgetId: string): SceneState | null => {
       for (const dimWin of getAllWindows()) {
         if (dimWin.currentScene?.widgets.has(widgetId)) {
@@ -49,7 +50,6 @@ app.whenReady().then(async () => {
       }
       return null
     },
-    // getWindow: find the DimensionsWindow that contains a widgetId
     (widgetId: string): DimensionsWindow | null => {
       for (const dimWin of getAllWindows()) {
         if (dimWin.currentScene?.widgets.has(widgetId)) {
@@ -60,10 +60,44 @@ app.whenReady().then(async () => {
     },
   )
 
-  // Ensure home scene exists
+  // Widget editing IPC — bounds update from scene drag/resize
+  ipcMain.handle('sdk:widget:bounds-update', (_event, widgetId: unknown, bounds: unknown) => {
+    if (typeof widgetId !== 'string') return
+    if (!bounds || typeof bounds !== 'object') return
+
+    const { x, y, width, height } = bounds as any
+    if (typeof x !== 'number' || typeof y !== 'number' ||
+        typeof width !== 'number' || typeof height !== 'number') return
+
+    // Find the scene and update meta.json
+    for (const dimWin of getAllWindows()) {
+      if (!dimWin.currentScene) continue
+      const entry = dimWin.currentScene.meta.widgets.find((w) => w.id === widgetId)
+      if (entry) {
+        entry.bounds = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) }
+        // Persist to meta.json
+        const metaPath = path.join(dimWin.currentScene.path, 'meta.json')
+        fs.writeFileSync(metaPath, JSON.stringify(dimWin.currentScene.meta, null, 2), 'utf-8')
+        break
+      }
+    }
+  })
+
+  // Widget selection from scene — forward to renderer for properties panel
+  ipcMain.handle('sdk:widget:select', (_event, widgetId: unknown) => {
+    if (typeof widgetId !== 'string') return
+
+    for (const dimWin of getAllWindows()) {
+      if (!dimWin.currentScene?.widgets.has(widgetId)) continue
+      if (!dimWin.browserWindow.isDestroyed()) {
+        dimWin.browserWindow.webContents.send('widget:select', widgetId)
+      }
+      break
+    }
+  })
+
   ensureHomeScene(HOME_SCENE_DIR)
 
-  // Create first window and load home scene
   const dimWin = createWindow(db)
   loadSceneIntoWindow(dimWin, HOME_SCENE_DIR)
 
@@ -79,6 +113,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('will-quit', () => {
+  unregisterGlobalShortcuts()
 })
 
 app.on('before-quit', () => {

@@ -11,6 +11,7 @@ import {
 import { watchScene, stopWatching } from './watcher'
 import { sanitizeIpcData } from './ipc-safety'
 import { buildWidget } from './builder'
+import { destroyTerminalsForWindow } from './terminal'
 import type { Database } from 'sql.js'
 
 // ── Types ──
@@ -165,6 +166,7 @@ export function createWindow(db: Database): DimensionsWindow {
   browserWindow.on('leave-full-screen', onBoundsUpdate)
 
   browserWindow.on('ready-to-show', () => {
+    browserWindow.maximize()
     browserWindow.show()
   })
 
@@ -185,6 +187,9 @@ export function createWindow(db: Database): DimensionsWindow {
     if (dimWin.prewarmedWCV) {
       cleanupWCV(dimWin.prewarmedWCV)
     }
+    // Destroy terminals for this window
+    destroyTerminalsForWindow(windowId)
+
     windows.delete(windowId)
 
     // If this was the last window's scene, stop watching
@@ -282,11 +287,29 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
 
 // ── WCV bounds management ──
 
+// Layout constants (must match renderer CSS vars)
+const TOPBAR_HEIGHT = 40
+const EDITOR_PANEL_WIDTH = 420
+
 function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
   if (dimWin.browserWindow.isDestroyed()) return
 
   const [width, height] = dimWin.browserWindow.getContentSize()
-  const bounds = { x: 0, y: 0, width, height }
+
+  let bounds: { x: number; y: number; width: number; height: number }
+
+  if (dimWin.editMode) {
+    // In edit mode: scene WCV shrinks to make room for top bar and editor panel
+    bounds = {
+      x: 0,
+      y: TOPBAR_HEIGHT,
+      width: Math.max(0, width - EDITOR_PANEL_WIDTH),
+      height: Math.max(0, height - TOPBAR_HEIGHT),
+    }
+  } else {
+    // In use mode: scene fills the window
+    bounds = { x: 0, y: 0, width, height }
+  }
 
   dimWin.sceneWCV.setBounds(bounds)
 
@@ -295,6 +318,24 @@ function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
   if (actual.width === 0 || actual.height === 0) {
     console.warn('Scene WCV zero-size after resize:', actual)
   }
+}
+
+// ── Edit mode ──
+
+export function toggleEditMode(dimWin: DimensionsWindow): boolean {
+  dimWin.editMode = !dimWin.editMode
+
+  if (!dimWin.browserWindow.isDestroyed()) {
+    dimWin.browserWindow.webContents.send('edit-mode', dimWin.editMode)
+    dimWin.sceneWCV.webContents.send('scene:edit-mode', dimWin.editMode)
+  }
+
+  for (const portalWcv of dimWin.portalWCVs.values()) {
+    portalWcv.webContents.setIgnoreMouseEvents(dimWin.editMode)
+  }
+
+  updateSceneWCVBounds(dimWin)
+  return dimWin.editMode
 }
 
 // ── IPC registration ──
@@ -342,28 +383,10 @@ export function registerWindowIpcHandlers(): void {
     return { error: 'not_found' }
   })
 
-  // Toggle edit mode
+  // Toggle edit mode (called from IPC and global shortcut)
   ipcMain.handle('toggle-edit-mode', (event) => {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
-
-    dimWin.editMode = !dimWin.editMode
-
-    // Notify renderer
-    if (!dimWin.browserWindow.isDestroyed()) {
-      dimWin.browserWindow.webContents.send('edit-mode', dimWin.editMode)
-    }
-
-    // Notify scene WCV
-    if (!dimWin.browserWindow.isDestroyed()) {
-      dimWin.sceneWCV.webContents.send('scene:edit-mode', dimWin.editMode)
-    }
-
-    // Freeze/unfreeze portal WCVs
-    for (const portalWcv of dimWin.portalWCVs.values()) {
-      portalWcv.webContents.setIgnoreMouseEvents(dimWin.editMode)
-    }
-
-    return dimWin.editMode
+    return toggleEditMode(dimWin)
   })
 }
