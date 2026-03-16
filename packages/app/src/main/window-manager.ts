@@ -217,12 +217,12 @@ export function createWindow(db: Database): DimensionsWindow {
 
 // ── Scene loading into a window ──
 
-export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string, dimensionId: string | null = null): void {
+export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string, dimensionId: string | null = null, dimensionPath?: string | null): void {
   // Rule 6: Check window isn't destroyed
   if (dimWin.browserWindow.isDestroyed()) return
 
   try {
-    const scene = loadSceneFromDisk(scenePath, dimensionId)
+    const scene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
     dimWin.currentScene = scene
 
     // Initial build of all custom widgets (async, non-blocking)
@@ -239,7 +239,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
       if (dimWin.browserWindow.isDestroyed()) return
 
       // Re-load scene to pick up newly built bundles
-      const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
+      const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
       dimWin.currentScene = updatedScene
 
       const html = generateSceneHtml(updatedScene)
@@ -283,7 +283,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
             }
 
             // Regenerate scene state and CLAUDE.md
-            const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
+            const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
             dimWin.currentScene = updatedScene
             generateClaudeMd(updatedScene)
           }
@@ -305,7 +305,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
       onSceneMetaChanged: () => {
         if (dimWin.browserWindow.isDestroyed()) return
         try {
-          const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
+          const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
           dimWin.currentScene = updatedScene
 
           const html = generateSceneHtml(updatedScene)
@@ -415,6 +415,8 @@ export function registerWindowIpcHandlers(): void {
       dimensionId: dimWin.currentScene.dimensionId,
       widgets: dimWin.currentScene.meta.widgets,
       theme: dimWin.currentScene.meta.theme,
+      dimensionTitle: dimWin.currentScene.dimensionMeta?.title ?? null,
+      dimensionScenes: dimWin.currentScene.dimensionMeta?.scenes ?? null,
     })
   })
 
@@ -436,7 +438,7 @@ export function registerWindowIpcHandlers(): void {
       destroyTerminalsForWindow(dimWin.id)
       cleanupPortalsForWindow(dimWin)
 
-      loadSceneIntoWindow(dimWin, route.scenePath, route.dimensionId)
+      loadSceneIntoWindow(dimWin, route.scenePath, route.dimensionId, route.dimensionPath)
       return { success: true }
     }
 

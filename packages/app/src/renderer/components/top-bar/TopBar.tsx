@@ -48,13 +48,21 @@ export function TopBar() {
           </button>
         </div>
 
-        {/* Scene title */}
+        {/* Scene title with dimension breadcrumb */}
         <h1
           className={cn(
             'text-[var(--text-sm)] font-medium no-drag cursor-default',
-            'text-[var(--color-text-primary)]',
+            'text-[var(--color-text-primary)] flex items-center gap-[var(--space-xs)]',
           )}
         >
+          {currentScene?.dimensionTitle && (
+            <>
+              <span className="text-[var(--color-text-muted)]">
+                {currentScene.dimensionTitle}
+              </span>
+              <span className="text-[var(--color-text-muted)]">&gt;</span>
+            </>
+          )}
           {currentScene?.title ?? 'Dimensions'}
         </h1>
       </div>

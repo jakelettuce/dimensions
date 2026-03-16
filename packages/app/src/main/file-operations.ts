@@ -164,7 +164,8 @@ export function registerFileOperationHandlers(): void {
             // Update scene state and CLAUDE.md
             const scenePath = dimWin.currentScene.path
             const dimensionId = dimWin.currentScene.dimensionId
-            dimWin.currentScene = loadSceneFromDisk(scenePath, dimensionId)
+            const dimensionPath = dimWin.currentScene.dimensionPath
+            dimWin.currentScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
             generateClaudeMd(dimWin.currentScene)
 
             // Notify renderer of build status

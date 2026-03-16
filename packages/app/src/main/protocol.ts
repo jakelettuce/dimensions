@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { SCHEME_DIMENSIONS, SCHEME_ASSET, DIMENSIONS_DIR } from './constants'
 import { assertPathWithin } from './ipc-safety'
+import { DimensionMetaSchema } from './schemas'
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
@@ -35,7 +36,7 @@ const MIME_TYPES: Record<string, string> = {
 
 export type SceneRoute =
   | { type: 'app'; route: string }
-  | { type: 'scene'; dimensionId: string | null; scenePath: string; widgetHash: string }
+  | { type: 'scene'; dimensionId: string | null; dimensionPath: string | null; scenePath: string; widgetHash: string }
   | { type: 'not_found' }
 
 const APP_ROUTES = new Set(['home', 'settings', 'settings/env'])
@@ -137,11 +138,15 @@ function routeToContent(contentPath: string, hash: string): SceneRoute {
   if (fs.existsSync(dimensionJsonPath)) {
     try {
       const raw = JSON.parse(fs.readFileSync(dimensionJsonPath, 'utf-8'))
-      const sceneName = parts[1] || raw.scenes?.[0]
+      const dimMeta = DimensionMetaSchema.parse(raw)
+      const sceneName = parts[1] || dimMeta.entryScene || dimMeta.scenes[0]
       if (!sceneName) return { type: 'not_found' }
+      // Validate the scene name is in the scenes array
+      if (!dimMeta.scenes.includes(sceneName)) return { type: 'not_found' }
       return {
         type: 'scene',
-        dimensionId: raw.id ?? null,
+        dimensionId: dimMeta.id ?? null,
+        dimensionPath: basePath,
         scenePath: path.join(basePath, sceneName),
         widgetHash: hash,
       }
@@ -156,6 +161,7 @@ function routeToContent(contentPath: string, hash: string): SceneRoute {
     return {
       type: 'scene',
       dimensionId: null,
+      dimensionPath: null,
       scenePath: basePath,
       widgetHash: hash,
     }

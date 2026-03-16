@@ -6,6 +6,8 @@ interface SceneInfo {
   title: string
   path: string
   dimensionId: string | null
+  dimensionTitle?: string | null
+  dimensionScenes?: string[] | null
   widgets: any[]
   theme?: { background: string; accent: string; [key: string]: string }
 }

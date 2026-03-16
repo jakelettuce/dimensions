@@ -1,7 +1,9 @@
+import path from 'path'
 import type { CapabilityModule, CapabilityContext } from './index'
 import { assertCapability } from './index'
 import { persistDb } from '../database'
 import { resolveRoute } from '../protocol'
+import { loadDimensionMeta } from '../scene-manager'
 import { loadSceneIntoWindow, cleanupPortalsForWindow } from '../window-manager'
 import { destroyTerminalsForWindow } from '../terminal'
 
@@ -44,7 +46,7 @@ export const navigateCapability: CapabilityModule = {
         destroyTerminalsForWindow(dimWin.id)
         cleanupPortalsForWindow(dimWin)
 
-        loadSceneIntoWindow(dimWin, route.scenePath, route.dimensionId)
+        loadSceneIntoWindow(dimWin, route.scenePath, route.dimensionId, route.dimensionPath)
         windowNavIndex.set(dimWin.id, 0)
         return null
       }
@@ -159,6 +161,84 @@ export const navigateCapability: CapabilityModule = {
       cleanupPortalsForWindow(dimWin)
       windowNavIndex.set(dimWin.id, nextOffset)
       loadSceneIntoWindow(dimWin, scenePath)
+      return null
+    })
+
+    // sdk.navigate.next() — go to next scene in current dimension
+    ctx.ipcMain.handle('sdk:navigate:next', async (_event, widgetId: unknown) => {
+      if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
+
+      const widget = ctx.getWidget(widgetId)
+      if (!widget) return { error: 'widget_not_found', widgetId }
+
+      try {
+        assertCapability(widget, 'navigate')
+      } catch {
+        return { error: 'capability_denied', capability: 'navigate', widgetId }
+      }
+
+      const scene = ctx.getScene(widgetId)
+      if (!scene || !scene.dimensionPath || !scene.dimensionId) {
+        return { error: 'not_in_dimension' }
+      }
+
+      const dimMeta = loadDimensionMeta(scene.dimensionPath)
+      if (!dimMeta || !dimMeta.scenes || dimMeta.scenes.length === 0) {
+        return { error: 'not_in_dimension' }
+      }
+
+      const currentIndex = dimMeta.scenes.indexOf(scene.slug)
+      if (currentIndex === -1) return { error: 'not_in_dimension' }
+      if (currentIndex >= dimMeta.scenes.length - 1) return { error: 'at_last_scene' }
+
+      const nextSlug = dimMeta.scenes[currentIndex + 1]
+      const nextScenePath = path.join(scene.dimensionPath, nextSlug)
+
+      const dimWin = ctx.getWindow(widgetId)
+      if (!dimWin || dimWin.browserWindow.isDestroyed()) return { error: 'window_not_found' }
+
+      destroyTerminalsForWindow(dimWin.id)
+      cleanupPortalsForWindow(dimWin)
+      loadSceneIntoWindow(dimWin, nextScenePath, scene.dimensionId, scene.dimensionPath)
+      return null
+    })
+
+    // sdk.navigate.previous() — go to previous scene in current dimension
+    ctx.ipcMain.handle('sdk:navigate:previous', async (_event, widgetId: unknown) => {
+      if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
+
+      const widget = ctx.getWidget(widgetId)
+      if (!widget) return { error: 'widget_not_found', widgetId }
+
+      try {
+        assertCapability(widget, 'navigate')
+      } catch {
+        return { error: 'capability_denied', capability: 'navigate', widgetId }
+      }
+
+      const scene = ctx.getScene(widgetId)
+      if (!scene || !scene.dimensionPath || !scene.dimensionId) {
+        return { error: 'not_in_dimension' }
+      }
+
+      const dimMeta = loadDimensionMeta(scene.dimensionPath)
+      if (!dimMeta || !dimMeta.scenes || dimMeta.scenes.length === 0) {
+        return { error: 'not_in_dimension' }
+      }
+
+      const currentIndex = dimMeta.scenes.indexOf(scene.slug)
+      if (currentIndex === -1) return { error: 'not_in_dimension' }
+      if (currentIndex <= 0) return { error: 'at_first_scene' }
+
+      const prevSlug = dimMeta.scenes[currentIndex - 1]
+      const prevScenePath = path.join(scene.dimensionPath, prevSlug)
+
+      const dimWin = ctx.getWindow(widgetId)
+      if (!dimWin || dimWin.browserWindow.isDestroyed()) return { error: 'window_not_found' }
+
+      destroyTerminalsForWindow(dimWin.id)
+      cleanupPortalsForWindow(dimWin)
+      loadSceneIntoWindow(dimWin, prevScenePath, scene.dimensionId, scene.dimensionPath)
       return null
     })
   },

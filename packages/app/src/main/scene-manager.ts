@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import { SceneMetaSchema, WidgetManifestSchema, ConnectionsFileSchema } from './schemas'
-import type { SceneMeta, WidgetManifest, Connection } from './schemas'
+import { SceneMetaSchema, WidgetManifestSchema, ConnectionsFileSchema, DimensionMetaSchema } from './schemas'
+import type { SceneMeta, WidgetManifest, Connection, DimensionMeta, Theme } from './schemas'
 import { DIMENSIONS_DIR } from './constants'
 
 // ── Widget state (runtime, not persisted) ──
@@ -22,16 +22,41 @@ export interface SceneState {
   slug: string
   path: string
   dimensionId: string | null
+  dimensionPath: string | null
+  dimensionMeta: DimensionMeta | null
   meta: SceneMeta
   connections: Connection[]
   widgets: Map<string, WidgetState>
+}
+
+// ── Dimension helpers ──
+
+export function loadDimensionMeta(dimensionPath: string): DimensionMeta | null {
+  const dimJsonPath = path.join(dimensionPath, 'dimension.json')
+  if (!fs.existsSync(dimJsonPath)) return null
+  try {
+    const raw = JSON.parse(fs.readFileSync(dimJsonPath, 'utf-8'))
+    return DimensionMetaSchema.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+export function mergeThemes(dimensionTheme?: Theme, sceneTheme?: Theme): Theme {
+  // Shallow merge: scene values override dimension values
+  return {
+    background: '#0a0a0a',
+    accent: '#7c3aed',
+    ...dimensionTheme,
+    ...sceneTheme,
+  }
 }
 
 /**
  * Load a scene from disk, validate with Zod, and return the full state.
  * Throws on invalid meta.json or missing files.
  */
-export function loadSceneFromDisk(scenePath: string, dimensionId: string | null): SceneState {
+export function loadSceneFromDisk(scenePath: string, dimensionId: string | null, dimensionPath?: string | null): SceneState {
   const metaPath = path.join(scenePath, 'meta.json')
   if (!fs.existsSync(metaPath)) {
     throw new Error(`Scene meta.json not found: ${metaPath}`)
@@ -89,11 +114,16 @@ export function loadSceneFromDisk(scenePath: string, dimensionId: string | null)
     }
   }
 
+  // Load dimension meta if dimensionPath is provided
+  const dimMeta = dimensionPath ? loadDimensionMeta(dimensionPath) : null
+
   return {
     id: meta.id,
     slug: meta.slug,
     path: scenePath,
     dimensionId,
+    dimensionPath: dimensionPath ?? null,
+    dimensionMeta: dimMeta,
     meta,
     connections,
     widgets,
@@ -105,7 +135,7 @@ export function loadSceneFromDisk(scenePath: string, dimensionId: string | null)
  * This is served via dimensions-asset:// to the scene WCV.
  */
 export function generateSceneHtml(scene: SceneState): string {
-  const theme = scene.meta.theme ?? { background: '#0a0a0a', accent: '#7c3aed' }
+  const theme = mergeThemes(scene.dimensionMeta?.theme, scene.meta.theme)
 
   const widgetFrames = scene.meta.widgets
     .map((entry) => {

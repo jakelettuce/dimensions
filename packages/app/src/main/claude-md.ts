@@ -24,13 +24,26 @@ export function generateClaudeMd(scene: SceneState): void {
     ? widgetLines.join('\n')
     : '_No widgets in this scene._'
 
+  // Build dimension context section if the scene is part of a dimension
+  let dimensionSection = ''
+  if (scene.dimensionMeta) {
+    const currentIndex = scene.dimensionMeta.scenes.indexOf(scene.slug)
+    const sceneOrder = scene.dimensionMeta.scenes.join(' \u2192 ')
+    dimensionSection = `
+## Dimension: ${scene.dimensionMeta.title}
+This scene is part of the "${scene.dimensionMeta.title}" dimension.
+Scene order: ${sceneOrder}
+Current position: ${currentIndex + 1} of ${scene.dimensionMeta.scenes.length}
+`
+  }
+
   const content = `# Dimensions Scene Context
 
 ## Scene: ${scene.meta.title}
 **ID:** ${scene.id}
 **Slug:** ${scene.slug}
 **Path:** ${scene.path}
-
+${dimensionSection}
 ### Active Widgets
 ${widgetsSection}
 

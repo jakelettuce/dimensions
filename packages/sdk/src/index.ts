@@ -202,6 +202,8 @@ export const sdk: DimensionsSDK = {
     to: (url: string) => { fire('sdk:navigate:to', url) },
     back: () => { fire('sdk:navigate:back') },
     forward: () => { fire('sdk:navigate:forward') },
+    next: () => { fire('sdk:navigate:next') },
+    previous: () => { fire('sdk:navigate:previous') },
   },
 
   // theme — requires "theme"

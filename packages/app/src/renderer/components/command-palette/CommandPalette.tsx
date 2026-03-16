@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import { cn } from '@/lib/utils'
-import { Search, Zap, ArrowRight, FileText } from 'lucide-react'
+import { Search, Zap, ArrowRight, FileText, Layers } from 'lucide-react'
 
 interface SceneResult {
   id: string
@@ -10,9 +10,15 @@ interface SceneResult {
   path: string
 }
 
+interface DimensionResult {
+  id: string
+  title: string
+  scenes: string[]
+}
+
 interface PaletteItem {
   id: string
-  kind: 'action' | 'scene'
+  kind: 'action' | 'scene' | 'dimension'
   title: string
   subtitle: string
   shortcut?: string
@@ -26,6 +32,7 @@ export function CommandPalette() {
 
   const [query, setQuery] = useState('')
   const [scenes, setScenes] = useState<SceneResult[]>([])
+  const [dimensions, setDimensions] = useState<DimensionResult[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   const handleClose = useCallback(() => {
@@ -38,6 +45,7 @@ export function CommandPalette() {
     if (!paletteOpen) {
       setQuery('')
       setScenes([])
+      setDimensions([])
       setSelectedIndex(0)
       return
     }
@@ -50,6 +58,14 @@ export function CommandPalette() {
       }
     }).catch(() => {
       // silently ignore — scenes may not be available
+    })
+
+    window.dimensions.listDimensions().then((result: DimensionResult[]) => {
+      if (Array.isArray(result)) {
+        setDimensions(result)
+      }
+    }).catch(() => {
+      // silently ignore — dimensions may not be available
     })
   }, [paletteOpen])
 
@@ -77,6 +93,16 @@ export function CommandPalette() {
       },
     },
     {
+      id: 'action:new-dimension',
+      kind: 'action' as const,
+      title: 'New Dimension',
+      subtitle: 'Create a new dimension',
+      onSelect: () => {
+        // placeholder
+        handleClose()
+      },
+    },
+    {
       id: 'action:open-settings',
       kind: 'action' as const,
       title: 'Open Settings',
@@ -88,20 +114,50 @@ export function CommandPalette() {
     },
   ], [handleClose])
 
-  // Build scene items
-  const sceneItems: PaletteItem[] = useMemo(
+  // Build a map of scene slug -> dimension title for labeling
+  const sceneDimensionMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const dim of dimensions) {
+      for (const sceneSlug of dim.scenes) {
+        map[sceneSlug] = dim.title
+      }
+    }
+    return map
+  }, [dimensions])
+
+  // Build dimension items
+  const dimensionItems: PaletteItem[] = useMemo(
     () =>
-      scenes.map((s) => ({
-        id: `scene:${s.id}`,
-        kind: 'scene' as const,
-        title: s.title || s.slug,
-        subtitle: s.slug,
+      dimensions.map((d) => ({
+        id: `dimension:${d.id}`,
+        kind: 'dimension' as const,
+        title: d.title,
+        subtitle: `${d.scenes.length} scene${d.scenes.length === 1 ? '' : 's'}`,
         onSelect: () => {
-          window.dimensions.navigateTo(`/scenes/${s.slug}`)
+          window.dimensions.navigateTo(`dimensions://go/${d.id}`)
           handleClose()
         },
       })),
-    [scenes, handleClose],
+    [dimensions, handleClose],
+  )
+
+  // Build scene items
+  const sceneItems: PaletteItem[] = useMemo(
+    () =>
+      scenes.map((s) => {
+        const dimTitle = sceneDimensionMap[s.slug]
+        return {
+          id: `scene:${s.id}`,
+          kind: 'scene' as const,
+          title: s.title || s.slug,
+          subtitle: dimTitle ? `${dimTitle} > ${s.slug}` : s.slug,
+          onSelect: () => {
+            window.dimensions.navigateTo(`/scenes/${s.slug}`)
+            handleClose()
+          },
+        }
+      }),
+    [scenes, sceneDimensionMap, handleClose],
   )
 
   // Filter by query (simple substring match)
@@ -115,6 +171,16 @@ export function CommandPalette() {
     )
   }, [actions, query])
 
+  const filteredDimensions = useMemo(() => {
+    if (!query) return dimensionItems
+    const q = query.toLowerCase()
+    return dimensionItems.filter(
+      (d) =>
+        d.title.toLowerCase().includes(q) ||
+        d.subtitle.toLowerCase().includes(q),
+    )
+  }, [dimensionItems, query])
+
   const filteredScenes = useMemo(() => {
     if (!query) return sceneItems
     const q = query.toLowerCase()
@@ -126,8 +192,8 @@ export function CommandPalette() {
   }, [sceneItems, query])
 
   const allItems = useMemo(
-    () => [...filteredActions, ...filteredScenes],
-    [filteredActions, filteredScenes],
+    () => [...filteredActions, ...filteredDimensions, ...filteredScenes],
+    [filteredActions, filteredDimensions, filteredScenes],
   )
 
   // Reset selection when items change
@@ -180,7 +246,8 @@ export function CommandPalette() {
 
   // Compute where the section boundaries fall so we can render headers
   const actionsStart = 0
-  const scenesStart = filteredActions.length
+  const dimensionsStart = filteredActions.length
+  const scenesStart = filteredActions.length + filteredDimensions.length
 
   return (
     <div
@@ -216,7 +283,7 @@ export function CommandPalette() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search scenes, actions..."
+            placeholder="Search scenes, dimensions, actions..."
             className={cn(
               'flex-1 h-12 bg-transparent border-none outline-none',
               'text-[var(--text-base)] text-[var(--color-text-primary)]',
@@ -316,6 +383,73 @@ export function CommandPalette() {
             </>
           )}
 
+          {/* Dimensions section */}
+          {filteredDimensions.length > 0 && (
+            <>
+              <div
+                className={cn(
+                  'px-[var(--space-md)] py-[var(--space-xs)]',
+                  'text-[var(--text-xs)] text-[var(--color-text-muted)]',
+                  'font-medium uppercase tracking-wider select-none',
+                  filteredActions.length > 0 ? 'mt-[var(--space-sm)]' : '',
+                )}
+              >
+                Dimensions
+              </div>
+              {filteredDimensions.map((item, i) => {
+                const globalIndex = dimensionsStart + i
+                const isSelected = globalIndex === selectedIndex
+                return (
+                  <button
+                    key={item.id}
+                    data-selected={isSelected}
+                    onClick={item.onSelect}
+                    onMouseEnter={() => setSelectedIndex(globalIndex)}
+                    className={cn(
+                      'flex items-center gap-[var(--space-sm)] w-full px-[var(--space-md)] py-[var(--space-sm)]',
+                      'rounded-[var(--radius-md)] text-left cursor-pointer',
+                      'transition-colors duration-75',
+                      isSelected
+                        ? 'bg-[var(--color-accent-subtle)]'
+                        : 'bg-transparent hover:bg-[var(--color-accent-subtle)]',
+                    )}
+                  >
+                    <Layers
+                      size={16}
+                      className={cn(
+                        'shrink-0',
+                        isSelected
+                          ? 'text-[var(--color-accent)]'
+                          : 'text-[var(--color-text-muted)]',
+                      )}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className={cn(
+                          'text-[var(--text-sm)] truncate',
+                          isSelected
+                            ? 'text-[var(--color-accent)]'
+                            : 'text-[var(--color-text-primary)]',
+                        )}
+                      >
+                        {item.title}
+                      </div>
+                      <div className="text-[var(--text-xs)] text-[var(--color-text-muted)] truncate">
+                        {item.subtitle}
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <ArrowRight
+                        size={14}
+                        className="shrink-0 text-[var(--color-accent)]"
+                      />
+                    )}
+                  </button>
+                )
+              })}
+            </>
+          )}
+
           {/* Recent Scenes section */}
           {filteredScenes.length > 0 && (
             <>
@@ -324,7 +458,7 @@ export function CommandPalette() {
                   'px-[var(--space-md)] py-[var(--space-xs)]',
                   'text-[var(--text-xs)] text-[var(--color-text-muted)]',
                   'font-medium uppercase tracking-wider select-none',
-                  filteredActions.length > 0 ? 'mt-[var(--space-sm)]' : '',
+                  (filteredActions.length > 0 || filteredDimensions.length > 0) ? 'mt-[var(--space-sm)]' : '',
                 )}
               >
                 Recent Scenes

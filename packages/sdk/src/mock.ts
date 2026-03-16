@@ -44,6 +44,8 @@ export function createMockSDK(overrides?: Partial<DimensionsSDK>): DimensionsSDK
       to: () => {},
       back: () => {},
       forward: () => {},
+      next: () => {},
+      previous: () => {},
     },
     theme: {
       get: async () => ({ background: '#0a0a0a', accent: '#7c3aed' }),

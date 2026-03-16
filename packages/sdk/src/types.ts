@@ -137,6 +137,8 @@ export interface DimensionsSDK {
     to(url: string): void
     back(): void
     forward(): void
+    next(): void
+    previous(): void
   }
   theme: {
     get(): Promise<ThemeVars>

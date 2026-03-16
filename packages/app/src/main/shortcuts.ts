@@ -138,7 +138,8 @@ export function registerGlobalShortcuts(): void {
       if (dimWin.currentScene) {
         const scenePath = dimWin.currentScene.path
         const dimensionId = dimWin.currentScene.dimensionId
-        const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
+        const dimensionPath = dimWin.currentScene.dimensionPath
+        const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
         dimWin.currentScene = updatedScene
 
         const html = generateSceneHtml(updatedScene)

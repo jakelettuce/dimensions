@@ -34,10 +34,14 @@ export const envCapability: CapabilityModule = {
         return { error: 'capability_denied', capability: 'env', widgetId }
       }
 
-      // Validate key is in manifest envKeys
+      // Validate key is in manifest envKeys or dimension-level sharedEnvKeys
       const envKeys = widget.manifest.envKeys ?? []
       if (!envKeys.includes(key)) {
-        return { error: 'env_key_not_allowed', key, allowedKeys: envKeys }
+        // Also check dimension-level shared env keys
+        const scene = ctx.getScene(widgetId)
+        if (!scene?.dimensionMeta?.sharedEnvKeys?.includes(key)) {
+          return { error: 'env_key_not_allowed', key, allowedKeys: envKeys }
+        }
       }
 
       const result = ctx.db.exec(

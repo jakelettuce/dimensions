@@ -82,7 +82,9 @@ export const SceneMetaSchema = z.object({
 export const DimensionMetaSchema = z.object({
   id: z.string(),
   title: z.string(),
+  slug: z.string().optional(), // derived from folder name if not set
   scenes: z.array(z.string()),
+  entryScene: z.string().optional(), // defaults to scenes[0]
   theme: ThemeSchema.optional(),
   sharedEnvKeys: z.array(z.string()).optional(),
 })
