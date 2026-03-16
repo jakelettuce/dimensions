@@ -1,5 +1,26 @@
-// fix-path MUST run before anything else — patches process.env.PATH for GUI-launched Electron
-import fixPath from 'fix-path'
+// Fix PATH for GUI-launched Electron (Finder/Dock launch has minimal PATH).
+// Must run before any pty.spawn() or child_process calls.
+import { execSync } from 'child_process'
+
+function fixPath(): void {
+  if (process.platform === 'win32') return
+  try {
+    const shell = process.env.SHELL || '/bin/zsh'
+    const result = execSync(`${shell} -ilc 'echo -n "$PATH"'`, {
+      encoding: 'utf8',
+      timeout: 5000,
+    })
+    if (result.trim()) {
+      process.env.PATH = result.trim()
+    }
+  } catch {
+    const fallback = '/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin'
+    if (!process.env.PATH?.includes('/usr/local/bin')) {
+      process.env.PATH = `${fallback}:${process.env.PATH || ''}`
+    }
+  }
+}
+
 fixPath()
 
 import { app, BrowserWindow, ipcMain } from 'electron'
