@@ -1,9 +1,16 @@
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, Code } from 'lucide-react'
 
 export function TopBar() {
-  const { editMode, currentScene } = useAppStore()
+  const { editMode, currentScene, contentView, setContentView } = useAppStore()
+
+  const handleToggleView = () => {
+    const newView = contentView === 'live' ? 'files' : 'live'
+    setContentView(newView)
+    // Tell main process to hide/show WCVs
+    window.dimensions.toggleWcvVisibility(newView === 'live')
+  }
 
   return (
     <div
@@ -53,6 +60,43 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-[var(--space-sm)] no-drag">
+        {/* Live / Files toggle */}
+        {editMode && (
+          <div
+            className={cn(
+              'flex items-center rounded-[var(--radius-md)] overflow-hidden',
+              'border border-[var(--color-border)]',
+            )}
+          >
+            <button
+              onClick={() => { if (contentView !== 'live') handleToggleView() }}
+              className={cn(
+                'flex items-center gap-1 px-[var(--space-sm)] py-1',
+                'text-[var(--text-xs)] font-medium transition-colors duration-[var(--duration-fast)]',
+                contentView === 'live'
+                  ? 'bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]',
+              )}
+            >
+              <Eye size={12} />
+              Live
+            </button>
+            <button
+              onClick={() => { if (contentView !== 'files') handleToggleView() }}
+              className={cn(
+                'flex items-center gap-1 px-[var(--space-sm)] py-1',
+                'text-[var(--text-xs)] font-medium transition-colors duration-[var(--duration-fast)]',
+                contentView === 'files'
+                  ? 'bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]',
+              )}
+            >
+              <Code size={12} />
+              Files
+            </button>
+          </div>
+        )}
+
         {/* Mode indicator */}
         <span
           className={cn(

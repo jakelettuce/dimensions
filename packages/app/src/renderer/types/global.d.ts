@@ -8,6 +8,7 @@ declare global {
       getCurrentScene: () => Promise<any>
       toggleEditMode: () => Promise<boolean>
       paletteClose: () => Promise<void>
+      toggleWcvVisibility: (visible: boolean) => Promise<void>
       onEditModeChange: (cb: (editing: boolean) => void) => void
       onWidgetBuildStatus: (cb: (status: { widgetId: string; success: boolean; error?: string }) => void) => void
       onAppNavigate: (cb: (route: string) => void) => void

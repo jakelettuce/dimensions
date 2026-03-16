@@ -15,7 +15,7 @@ const CHROME_HEIGHT = 36
 
 // ── Types ──
 
-interface TabState {
+export interface TabState {
   id: string
   contentWCV: WebContentsView
   url: string
@@ -26,7 +26,7 @@ interface TabState {
   isPlayingAudio: boolean
 }
 
-interface PortalInstance {
+export interface PortalInstance {
   widgetId: string
   widgetDir: string
   chromeWCV: WebContentsView

@@ -12,9 +12,16 @@ export default function App() {
     useAppStore()
 
   useEffect(() => {
-    // Edit mode
+    // Edit mode — when leaving, switch back to live view
     window.dimensions.onEditModeChange((editing) => {
       setEditMode(editing)
+      if (!editing) {
+        const store = useAppStore.getState()
+        if (store.contentView === 'files') {
+          store.setContentView('live')
+          window.dimensions.toggleWcvVisibility(true)
+        }
+      }
     })
 
     // Build status
@@ -52,7 +59,9 @@ export default function App() {
 
     window.dimensions.onToggleContentView(() => {
       const store = useAppStore.getState()
-      store.setContentView(store.contentView === 'live' ? 'files' : 'live')
+      const newView = store.contentView === 'live' ? 'files' : 'live'
+      store.setContentView(newView)
+      window.dimensions.toggleWcvVisibility(newView === 'live')
     })
 
     window.dimensions.onFocusTerminal(() => {

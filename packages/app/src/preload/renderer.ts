@@ -17,6 +17,7 @@ const INVOKE_CHANNELS = new Set([
   'create-terminal',
   'destroy-terminal',
   'palette-close',
+  'toggle-wcv-visibility',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -102,6 +103,9 @@ contextBridge.exposeInMainWorld('dimensions', {
 
   // Palette close (restore scene WCV)
   paletteClose: () => ipcRenderer.invoke('palette-close'),
+
+  // Toggle WCV visibility (for files view)
+  toggleWcvVisibility: (visible: boolean) => ipcRenderer.invoke('toggle-wcv-visibility', visible),
 
   // Widget selection (from scene WCV)
   onWidgetSelect: (cb: (widgetId: string) => void) => {

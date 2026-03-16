@@ -1,5 +1,6 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron'
 import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, type DimensionsWindow } from './window-manager'
+import { getPortal } from './webportal-manager'
 
 function getFocusedDimWin() {
   const focused = BrowserWindow.getFocusedWindow()
@@ -7,21 +8,40 @@ function getFocusedDimWin() {
   return findWindowByBrowserWindow(focused)
 }
 
-// WCVs are native layers above the renderer. To show renderer-drawn overlays
-// (command palette), we must remove the WCV from the view tree, then re-add it.
+// Track saved WCV state for hide/show
 const savedBounds = new Map<string, { x: number; y: number; width: number; height: number }>()
 
-function hideSceneWCV(dimWin: DimensionsWindow): void {
+// Collect ALL WCVs that need hiding (scene + all portal chrome + all portal content tabs)
+function getAllPortalWCVs(dimWin: DimensionsWindow): Electron.WebContentsView[] {
+  const wcvs: Electron.WebContentsView[] = []
+  if (!dimWin.currentScene) return wcvs
+
+  for (const entry of dimWin.currentScene.meta.widgets) {
+    const portal = getPortal(entry.id)
+    if (!portal) continue
+    // Chrome WCV
+    wcvs.push(portal.chromeWCV)
+    // All tab content WCVs
+    for (const [, tab] of portal.tabs) {
+      wcvs.push(tab.contentWCV)
+    }
+  }
+  return wcvs
+}
+
+function hideAllWCVs(dimWin: DimensionsWindow): void {
   try {
     savedBounds.set(dimWin.id, dimWin.sceneWCV.getBounds())
     dimWin.browserWindow.contentView.removeChildView(dimWin.sceneWCV)
-    for (const portalWcv of dimWin.portalWCVs.values()) {
-      dimWin.browserWindow.contentView.removeChildView(portalWcv)
+
+    // Remove ALL portal WCVs (chrome + every tab's content)
+    for (const wcv of getAllPortalWCVs(dimWin)) {
+      try { dimWin.browserWindow.contentView.removeChildView(wcv) } catch {}
     }
   } catch {}
 }
 
-function showSceneWCV(dimWin: DimensionsWindow): void {
+function showAllWCVs(dimWin: DimensionsWindow): void {
   try {
     dimWin.browserWindow.contentView.addChildView(dimWin.sceneWCV)
     const bounds = savedBounds.get(dimWin.id)
@@ -29,8 +49,18 @@ function showSceneWCV(dimWin: DimensionsWindow): void {
       dimWin.sceneWCV.setBounds(bounds)
       savedBounds.delete(dimWin.id)
     }
-    for (const portalWcv of dimWin.portalWCVs.values()) {
-      dimWin.browserWindow.contentView.addChildView(portalWcv)
+
+    // Re-add portal WCVs in correct z-order (content before chrome)
+    if (dimWin.currentScene) {
+      for (const entry of dimWin.currentScene.meta.widgets) {
+        const portal = getPortal(entry.id)
+        if (!portal) continue
+        const activeTab = portal.tabs.get(portal.activeTabId)
+        if (activeTab) {
+          dimWin.browserWindow.contentView.addChildView(activeTab.contentWCV)
+        }
+        dimWin.browserWindow.contentView.addChildView(portal.chromeWCV)
+      }
     }
   } catch {}
 }
@@ -42,12 +72,11 @@ export function registerGlobalShortcuts(): void {
     if (dimWin) toggleEditMode(dimWin)
   })
 
-  // Cmd+K: Open command palette — hide WCV, tell renderer
+  // Cmd+K: Open command palette — hide ALL WCVs, tell renderer
   globalShortcut.register('CommandOrControl+K', () => {
     const dimWin = getFocusedDimWin()
     if (!dimWin) return
-    // Always hide WCV and tell renderer to open palette
-    hideSceneWCV(dimWin)
+    hideAllWCVs(dimWin)
     dimWin.browserWindow.webContents.send('open-palette')
   })
 
@@ -56,13 +85,6 @@ export function registerGlobalShortcuts(): void {
     const focused = BrowserWindow.getFocusedWindow()
     if (!focused) return
     focused.webContents.send('set-editor-tool', 'claude')
-  })
-
-  // Cmd+2: No-code properties tab
-  globalShortcut.register('CommandOrControl+2', () => {
-    const focused = BrowserWindow.getFocusedWindow()
-    if (!focused) return
-    focused.webContents.send('set-editor-tool', 'nocode')
   })
 
   // Cmd+[: Navigate back
@@ -79,14 +101,16 @@ export function registerGlobalShortcuts(): void {
     focused.webContents.send('navigate-forward')
   })
 
-  // Cmd+Shift+F: Toggle Live/Files view
+  // Cmd+Shift+F: Toggle Live/Files view — hide/show WCVs
   globalShortcut.register('CommandOrControl+Shift+F', () => {
-    const focused = BrowserWindow.getFocusedWindow()
-    if (!focused) return
-    focused.webContents.send('toggle-content-view')
+    const dimWin = getFocusedDimWin()
+    if (!dimWin) return
+    // Only works in edit mode
+    if (!dimWin.editMode) return
+    dimWin.browserWindow.webContents.send('toggle-content-view')
   })
 
-  // Cmd+`: Focus terminal
+  // Cmd+`: Focus terminal (enter edit mode if needed)
   globalShortcut.register('CommandOrControl+`', () => {
     const dimWin = getFocusedDimWin()
     if (!dimWin) return
@@ -95,11 +119,22 @@ export function registerGlobalShortcuts(): void {
     dimWin.browserWindow.webContents.send('focus-terminal')
   })
 
-  // IPC: renderer signals palette closed → restore scene WCV
+  // IPC: renderer signals palette closed → restore WCVs
   ipcMain.handle('palette-close', (event) => {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
-    showSceneWCV(dimWin)
+    showAllWCVs(dimWin)
+  })
+
+  // IPC: renderer toggles files view — hide/show WCVs
+  ipcMain.handle('toggle-wcv-visibility', (event, visible: unknown) => {
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin) return
+    if (visible) {
+      showAllWCVs(dimWin)
+    } else {
+      hideAllWCVs(dimWin)
+    }
   })
 }
 
