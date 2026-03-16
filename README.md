@@ -46,11 +46,54 @@ You: using it 30 seconds later
   home/                         # standalone scene
 ```
 
+### Process model
+
+```
+Main Process (Node.js, trusted)
+  ├── Window manager (multi-window, each independent)
+  ├── Scene WCV (one sandboxed WebContentsView per window)
+  ├── Webportal WCV pool (pre-warmed for instant portal creation)
+  ├── File watcher → esbuild → hot reload (~100ms)
+  ├── Capability-gated IPC handlers
+  ├── Global keyboard shortcuts (Cmd+E, Cmd+K, etc.)
+  ├── Terminal manager (node-pty, scoped per scene)
+  ├── dimensions:// protocol (navigation)
+  ├── dimensions-asset:// protocol (static file serving)
+  └── SQLite database (sql.js/WASM)
+
+Renderer (app chrome, trusted)
+  ├── Top bar (scene title, navigation, mode indicator)
+  ├── Editor tools panel (Claude Code terminal / no-code properties)
+  ├── Command palette (Cmd+K)
+  └── Themed with Tailwind CSS + CSS custom properties
+```
+
+### Core concepts
+
 - **Scenes** are folders containing widgets, metadata, and wiring
-- **Widgets** are self-contained HTML/JS/CSS components — custom UIs, embedded websites, or terminals
+- **Widgets** are self-contained HTML/JS/CSS — custom UIs, embedded websites, or terminals
 - **Dimensions** group scenes into packages with shared config and ordered flows
 - **`@dimensions/sdk`** gives widgets access to storage, network, navigation, theming, and more — all capability-gated
 - **Two protocols:** `dimensions://` for navigation, `dimensions-asset://` for static file serving — separated for security
+
+### Edit mode / Use mode
+
+**Use mode** (default): App chrome hidden. Scene fills the window. The scene defines all interaction — the app imposes nothing. Could be a dashboard, a workspace, a game, anything.
+
+**Edit mode** (`Cmd+E`): App chrome appears — top bar with scene title and navigation, right panel with a Claude Code terminal (scoped to the scene folder) or a no-code properties panel. Widgets show drag/resize handles. Webportals freeze for interaction passthrough. All changes persist to `meta.json` on disk.
+
+### Widget SDK
+
+Widgets communicate through `@dimensions/sdk` — a lightweight postMessage bridge that routes through the main process. Every SDK method requires a declared capability in the widget's manifest. Capabilities are checked on every IPC call.
+
+```typescript
+// Example: widget storing data
+await sdk.kv.set('count', 42)       // requires "kv" capability
+const val = await sdk.kv.get('count')
+
+// Example: widget fetching from an API
+const res = await sdk.fetch('https://api.example.com/data')  // requires "network" + allowedHosts
+```
 
 ## Getting started
 
@@ -63,11 +106,32 @@ npm run dev
 
 On first launch, the app creates `~/Dimensions/home/` with a starter scene. No sign-in, no setup — start building immediately.
 
-## Tech
+### Keyboard shortcuts
 
-Electron. React + TypeScript renderer. Scenes rendered in sandboxed WebContentsViews. Widgets communicate through `@dimensions/sdk` (postMessage → IPC → capability-gated handlers). File-based data model — git-friendly, inspectable. SQLite (via sql.js/WASM) for KV storage and indexing.
+| Shortcut | Action |
+|---|---|
+| `Cmd+E` | Toggle edit mode |
+| `Cmd+K` | Command palette |
+| `Cmd+1` / `Cmd+2` | Claude Code terminal / No-code panel |
+| `Cmd+[` / `Cmd+]` | Navigate back / forward |
+| `` Cmd+` `` | Focus terminal |
+| `Cmd+Shift+F` | Toggle Live / Files view |
 
-Key dependencies: electron-vite, esbuild, chokidar, node-pty, xterm.js, Zustand, Zod, Tailwind CSS, Radix UI.
+## Tech stack
+
+| Package | Purpose |
+|---|---|
+| Electron | Desktop shell, WebContentsView management |
+| React + TypeScript | Renderer UI |
+| Tailwind CSS v4 | Styling (all theming via CSS custom properties in one file) |
+| Radix UI + Lucide | Accessible primitives, icons |
+| Zustand | State management |
+| node-pty + xterm.js | Integrated terminal |
+| sql.js | SQLite via WASM (zero native module hassle) |
+| esbuild + chokidar | Widget compilation + file watching |
+| Zod | Schema validation for all data files |
+| Framer Motion | Animations |
+| tinykeys | Keyboard shortcuts (renderer fallback) |
 
 ## Security model
 
@@ -78,7 +142,13 @@ Key dependencies: electron-vite, esbuild, chokidar, node-pty, xterm.js, Zustand,
 | Webportal WCVs | Most sandboxed | Web only, no SDK |
 | Widget iframes | `sandbox` attribute | SDK via postMessage |
 
-Every SDK call is capability-gated. Widgets declare capabilities in their manifest. The main process checks on every IPC call. Network requests are proxied and host-checked. Env variables stored in OS keychain, never in files. Path traversal blocked at every boundary.
+- Every SDK call is capability-gated — widgets declare capabilities in their manifest, main process checks on every IPC call
+- Network requests proxied through main process, host-checked against manifest allowlist
+- Environment variables stored in OS keychain via `safeStorage`, never in files or SQLite
+- Path traversal blocked at every boundary (`assertPathWithin` on all file operations)
+- IPC channels explicitly whitelisted in preload scripts, data sanitized on every bridge crossing
+- Terminal PTY processes scoped to scene folder — no access outside `~/Dimensions/`
+- Global shortcuts guarded by focus check — don't fire when app isn't focused
 
 ## Roadmap
 
