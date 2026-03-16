@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "postinstall": "electron-rebuild -m ../../"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
@@ -34,6 +35,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "@tailwindcss/vite": "^4.2.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
