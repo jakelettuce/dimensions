@@ -108,11 +108,13 @@ export function generateSceneHtml(scene: SceneState): string {
       if (!widget) return ''
 
       const { x, y, width, height } = entry.bounds
-      // Build asset URL relative to ~/Dimensions/
-      // dimensions-asset://home/widgets/test-widget/dist/bundle.html
-      const bundleUrl = widget.bundlePath
+      // Build asset URL with widget context as search params
+      // dimensions-asset://home/widgets/test-widget/dist/bundle.html?widgetId=X&sceneId=Y&sceneTitle=Z
+      const baseBundleUrl = widget.bundlePath
         ? `dimensions-asset://${path.relative(DIMENSIONS_DIR, widget.bundlePath).split(path.sep).join('/')}`
         : ''
+      const contextParams = `widgetId=${encodeURIComponent(entry.id)}&sceneId=${encodeURIComponent(scene.id)}&sceneTitle=${encodeURIComponent(scene.meta.title)}`
+      const bundleUrl = baseBundleUrl ? `${baseBundleUrl}?${contextParams}` : ''
 
       if (!bundleUrl) {
         return `<div class="widget-placeholder" data-widget-id="${entry.id}"

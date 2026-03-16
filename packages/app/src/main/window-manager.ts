@@ -10,6 +10,7 @@ import {
 } from './scene-manager'
 import { watchScene, stopWatching } from './watcher'
 import { sanitizeIpcData } from './ipc-safety'
+import { buildWidget } from './builder'
 import type { Database } from 'sql.js'
 
 // ── Types ──
@@ -212,15 +213,54 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
     const scene = loadSceneFromDisk(scenePath, dimensionId)
     dimWin.currentScene = scene
 
-    // Generate scene HTML and write to disk for serving via dimensions-asset://
+    // Initial build of all widgets (async, non-blocking)
+    // This ensures bundles exist with SDK injected before the scene loads
+    const widgetBuildPromises = Array.from(scene.widgets.values())
+      .filter((w) => w.manifest.type === 'custom')
+      .map(async (w) => {
+        const srcDir = path.join(scenePath, 'widgets', w.id, 'src')
+        // Also try to find src dir by scanning widget directories
+        const widgetsDir = path.join(scenePath, 'widgets')
+        const fs = require('fs')
+        if (fs.existsSync(widgetsDir)) {
+          for (const entry of fs.readdirSync(widgetsDir)) {
+            const manifestPath = path.join(widgetsDir, entry, 'src', 'widget.manifest.json')
+            if (fs.existsSync(manifestPath)) {
+              try {
+                const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
+                if (raw.id === w.id) {
+                  await buildWidget(path.join(widgetsDir, entry, 'src'))
+                  return
+                }
+              } catch {}
+            }
+          }
+        }
+      })
+
+    // Wait for initial builds, then generate scene HTML and load
+    Promise.all(widgetBuildPromises).then(() => {
+      if (dimWin.browserWindow.isDestroyed()) return
+
+      // Re-load scene to pick up newly built bundles
+      const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
+      dimWin.currentScene = updatedScene
+
+      const html = generateSceneHtml(updatedScene)
+      const htmlPath = writeSceneHtml(scenePath, html)
+      const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
+      const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+
+      dimWin.sceneWCV.webContents.loadURL(sceneUrl)
+    }).catch((err) => {
+      console.error('Widget initial build error:', err)
+    })
+
+    // Also generate and load scene HTML immediately (widgets may show placeholders initially)
     const html = generateSceneHtml(scene)
     const htmlPath = writeSceneHtml(scenePath, html)
-
-    // Build asset URL for the scene HTML
     const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
     const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
-
-    // Load into scene WCV
     dimWin.sceneWCV.webContents.loadURL(sceneUrl)
 
     // Start watching this scene for file changes

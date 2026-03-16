@@ -1,22 +1,30 @@
 import * as esbuild from 'esbuild'
 import fs from 'fs'
 import path from 'path'
+import { getContextInjectionScript, getSdkBundle } from './sdk-bundle'
 
-/**
- * Build a widget from src/ → dist/bundle.html.
- * Always async — never blocks the main process.
- *
- * Strategy:
- * 1. If src/index.ts or src/index.js exists, bundle it → dist/bundle.js (IIFE, browser)
- * 2. Read src/index.html
- * 3. Inject bundled JS into the HTML → dist/bundle.html
- * 4. If only src/index.html exists (no JS/TS), just copy it to dist/bundle.html
- */
+// Cached SDK bundle IIFE — loaded once, injected into every widget
+let sdkScript: string | null = null
+
+async function ensureSdkScript(): Promise<string> {
+  if (sdkScript) return sdkScript
+  const bundle = await getSdkBundle()
+  sdkScript = `<script>\n${bundle}\n</script>`
+  return sdkScript
+}
+
+// Build a widget from src/ to dist/bundle.html.
+// Always async — never blocks the main process.
+//
+// Strategy:
+// 1. If src/index.ts or src/index.js exists, bundle it via esbuild (IIFE, browser)
+// 2. Read src/index.html
+// 3. Inject context script + SDK runtime + bundled JS into HTML
+// 4. Write dist/bundle.html
 export async function buildWidget(widgetSrcDir: string): Promise<{ success: boolean; error?: string }> {
-  const widgetDir = path.dirname(widgetSrcDir) // widgets/my-widget
+  const widgetDir = path.dirname(widgetSrcDir)
   const distDir = path.join(widgetDir, 'dist')
 
-  // Ensure dist/ exists
   if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true })
   }
@@ -32,7 +40,6 @@ export async function buildWidget(widgetSrcDir: string): Promise<{ success: bool
     let bundledJs = ''
 
     if (entryPoint) {
-      // Bundle JS/TS → IIFE
       const result = await esbuild.build({
         entryPoints: [entryPoint],
         bundle: true,
@@ -50,11 +57,25 @@ export async function buildWidget(widgetSrcDir: string): Promise<{ success: bool
       }
     }
 
+    // Get SDK injection scripts
+    const contextScript = getContextInjectionScript()
+    const sdkTag = await ensureSdkScript()
+    const injectionHead = `${contextScript}\n${sdkTag}`
+
     if (fs.existsSync(htmlPath)) {
       let html = fs.readFileSync(htmlPath, 'utf-8')
 
+      // Inject context + SDK after <head> or at the very start
+      if (html.includes('<head>')) {
+        html = html.replace('<head>', `<head>\n${injectionHead}`)
+      } else if (html.includes('<html>') || html.includes('<html ')) {
+        html = html.replace(/<html[^>]*>/, `$&\n<head>${injectionHead}</head>`)
+      } else {
+        html = `${injectionHead}\n${html}`
+      }
+
+      // Inject widget JS before </body>
       if (bundledJs) {
-        // Inject bundled JS before </body> or at end
         const scriptTag = `<script>\n${bundledJs}\n</script>`
         if (html.includes('</body>')) {
           html = html.replace('</body>', `${scriptTag}\n</body>`)
@@ -65,9 +86,8 @@ export async function buildWidget(widgetSrcDir: string): Promise<{ success: bool
 
       fs.writeFileSync(path.join(distDir, 'bundle.html'), html, 'utf-8')
     } else if (bundledJs) {
-      // No HTML template — wrap JS in minimal HTML
       const html = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
+<html><head><meta charset="UTF-8">${injectionHead}</head>
 <body><script>\n${bundledJs}\n</script></body></html>`
       fs.writeFileSync(path.join(distDir, 'bundle.html'), html, 'utf-8')
     } else {
@@ -82,11 +102,8 @@ export async function buildWidget(widgetSrcDir: string): Promise<{ success: bool
   }
 }
 
-/**
- * Given a changed file path, resolve the widget src directory it belongs to.
- * Expected structure: .../widgets/<widget-name>/src/<file>
- * Returns the src/ directory path, or null if not in a widget.
- */
+// Given a changed file path, resolve the widget src directory.
+// Expected: .../widgets/<name>/src/<file>
 export function resolveWidgetSrcDir(filePath: string): string | null {
   const parts = filePath.split(path.sep)
   const srcIdx = parts.lastIndexOf('src')
@@ -98,9 +115,7 @@ export function resolveWidgetSrcDir(filePath: string): string | null {
   return parts.slice(0, srcIdx + 1).join(path.sep)
 }
 
-/**
- * Given a widget src dir, resolve the widget ID from its manifest.
- */
+// Given a widget src dir, resolve the widget ID from its manifest.
 export function resolveWidgetId(widgetSrcDir: string): string | null {
   const manifestPath = path.join(widgetSrcDir, 'widget.manifest.json')
   if (!fs.existsSync(manifestPath)) return null

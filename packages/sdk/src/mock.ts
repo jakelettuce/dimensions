@@ -13,7 +13,7 @@ export function createMockSDK(overrides?: Partial<DimensionsSDK>): DimensionsSDK
       list: async () => [],
     },
     assets: {
-      upload: async () => 'asset://mock',
+      upload: async () => 'dimensions-asset://mock/asset.png',
       resolve: async () => '',
       list: async () => [],
     },
