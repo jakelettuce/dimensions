@@ -207,16 +207,16 @@ function wireContentWCVEvents(
     if (wc.isDestroyed()) return
     tab.url = url
     tab.isLoading = true
-    tab.canGoBack = wc.canGoBack()
-    tab.canGoForward = wc.canGoForward()
+    tab.canGoBack = wc.navigationHistory.canGoBack()
+    tab.canGoForward = wc.navigationHistory.canGoForward()
     if (tab.id === portal.activeTabId) sendNavUpdate(portal)
   })
 
   wc.on('did-navigate', (_event, url) => {
     if (wc.isDestroyed()) return
     tab.url = url
-    tab.canGoBack = wc.canGoBack()
-    tab.canGoForward = wc.canGoForward()
+    tab.canGoBack = wc.navigationHistory.canGoBack()
+    tab.canGoForward = wc.navigationHistory.canGoForward()
     if (tab.id === portal.activeTabId) sendNavUpdate(portal)
     sendTabsUpdate(portal)
   })
@@ -224,8 +224,8 @@ function wireContentWCVEvents(
   wc.on('did-navigate-in-page', (_event, url) => {
     if (wc.isDestroyed()) return
     tab.url = url
-    tab.canGoBack = wc.canGoBack()
-    tab.canGoForward = wc.canGoForward()
+    tab.canGoBack = wc.navigationHistory.canGoBack()
+    tab.canGoForward = wc.navigationHistory.canGoForward()
     if (tab.id === portal.activeTabId) sendNavUpdate(portal)
   })
 
@@ -245,8 +245,8 @@ function wireContentWCVEvents(
   wc.on('did-finish-load', () => {
     if (wc.isDestroyed()) return
     tab.isLoading = false
-    tab.canGoBack = wc.canGoBack()
-    tab.canGoForward = wc.canGoForward()
+    tab.canGoBack = wc.navigationHistory.canGoBack()
+    tab.canGoForward = wc.navigationHistory.canGoForward()
     if (tab.id === portal.activeTabId) sendNavUpdate(portal)
     extractCSSForTab(tab, portal).catch(() => {})
   })
@@ -742,8 +742,8 @@ export function registerPortalIpcHandlers(): void {
     if (!tab) return
 
     const wc = tab.contentWCV.webContents
-    if (!wc.isDestroyed() && wc.canGoBack()) {
-      wc.goBack()
+    if (!wc.isDestroyed() && wc.navigationHistory.canGoBack()) {
+      wc.navigationHistory.goBack()
     }
   })
 
@@ -756,8 +756,8 @@ export function registerPortalIpcHandlers(): void {
     if (!tab) return
 
     const wc = tab.contentWCV.webContents
-    if (!wc.isDestroyed() && wc.canGoForward()) {
-      wc.goForward()
+    if (!wc.isDestroyed() && wc.navigationHistory.canGoForward()) {
+      wc.navigationHistory.goForward()
     }
   })
 
