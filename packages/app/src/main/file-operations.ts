@@ -12,27 +12,57 @@ import { sanitizeIpcData } from './ipc-safety'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 export function registerFileOperationHandlers(): void {
-  // ── list-scenes (scan ~/Dimensions/ for folders with meta.json) ──
+  // ── list-scenes (scan ~/Dimensions/ for all scenes — standalone + inside dimensions) ──
   ipcMain.handle('list-scenes', () => {
     try {
       if (!fs.existsSync(DIMENSIONS_DIR)) return []
       const entries = fs.readdirSync(DIMENSIONS_DIR, { withFileTypes: true })
-      const scenes: Array<{ id: string; slug: string; title: string; path: string }> = []
+      const scenes: Array<{ id: string; slug: string; title: string; path: string; dimensionTitle?: string }> = []
 
       for (const entry of entries) {
         if (!entry.isDirectory()) continue
         if (entry.name.startsWith('.')) continue
-        const metaPath = path.join(DIMENSIONS_DIR, entry.name, 'meta.json')
-        if (!fs.existsSync(metaPath)) continue
-        try {
-          const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
-          scenes.push({
-            id: raw.id || entry.name,
-            slug: raw.slug || entry.name,
-            title: raw.title || entry.name,
-            path: path.join(DIMENSIONS_DIR, entry.name),
-          })
-        } catch {}
+        const entryPath = path.join(DIMENSIONS_DIR, entry.name)
+
+        // Standalone scene (has meta.json, no dimension.json)
+        const metaPath = path.join(entryPath, 'meta.json')
+        if (fs.existsSync(metaPath) && !fs.existsSync(path.join(entryPath, 'dimension.json'))) {
+          try {
+            const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+            scenes.push({
+              id: raw.id || entry.name,
+              slug: raw.slug || entry.name,
+              title: raw.title || entry.name,
+              path: entryPath,
+            })
+          } catch {}
+        }
+
+        // Dimension folder — scan for scenes inside
+        const dimJsonPath = path.join(entryPath, 'dimension.json')
+        if (fs.existsSync(dimJsonPath)) {
+          try {
+            const dimRaw = JSON.parse(fs.readFileSync(dimJsonPath, 'utf-8'))
+            const dimTitle = dimRaw.title || entry.name
+            const dimScenes: string[] = dimRaw.scenes || []
+
+            for (const sceneSlug of dimScenes) {
+              const scenePath = path.join(entryPath, sceneSlug)
+              const sceneMetaPath = path.join(scenePath, 'meta.json')
+              if (!fs.existsSync(sceneMetaPath)) continue
+              try {
+                const sceneRaw = JSON.parse(fs.readFileSync(sceneMetaPath, 'utf-8'))
+                scenes.push({
+                  id: sceneRaw.id || sceneSlug,
+                  slug: sceneRaw.slug || sceneSlug,
+                  title: sceneRaw.title || sceneSlug,
+                  path: scenePath,
+                  dimensionTitle: dimTitle,
+                })
+              } catch {}
+            }
+          } catch {}
+        }
       }
 
       return scenes

@@ -152,7 +152,7 @@ export function CommandPalette() {
           title: s.title || s.slug,
           subtitle: dimTitle ? `${dimTitle} > ${s.slug}` : s.slug,
           onSelect: () => {
-            window.dimensions.navigateTo(`/scenes/${s.slug}`)
+            window.dimensions.navigateTo(`dimensions://go/${s.id}`)
             handleClose()
           },
         }

@@ -14,6 +14,7 @@ import { buildWidget } from './builder'
 import { destroyTerminalsForWindow } from './terminal'
 import { repositionPortals, freezePortals, mountAllWebportals, destroyAllPortals } from './webportal-manager'
 import { generateClaudeMd } from './claude-md'
+import { resolveRoute } from './protocol'
 import type { Database } from 'sql.js'
 
 // ── Types ──
@@ -429,8 +430,6 @@ export function registerWindowIpcHandlers(): void {
     if (typeof rawUrl !== 'string') return { error: 'invalid_url' }
     const url = rawUrl
 
-    // Import lazily to avoid circular deps
-    const { resolveRoute } = require('./protocol')
     const route = resolveRoute(url)
 
     if (route.type === 'scene') {

@@ -131,31 +131,18 @@ function routeToContent(contentPath: string, hash: string): SceneRoute {
   const parts = contentPath.split('/').filter(Boolean)
   if (parts.length === 0) return { type: 'not_found' }
 
-  const basePath = path.join(DIMENSIONS_DIR, parts[0])
+  const identifier = parts[0] // could be a folder name, dimension ID, or scene ID
 
-  // Dimension: folder has dimension.json
+  // Try direct folder match first (fast path)
+  const basePath = path.join(DIMENSIONS_DIR, identifier)
+
+  // Check if it's a dimension folder
   const dimensionJsonPath = path.join(basePath, 'dimension.json')
   if (fs.existsSync(dimensionJsonPath)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(dimensionJsonPath, 'utf-8'))
-      const dimMeta = DimensionMetaSchema.parse(raw)
-      const sceneName = parts[1] || dimMeta.entryScene || dimMeta.scenes[0]
-      if (!sceneName) return { type: 'not_found' }
-      // Validate the scene name is in the scenes array
-      if (!dimMeta.scenes.includes(sceneName)) return { type: 'not_found' }
-      return {
-        type: 'scene',
-        dimensionId: dimMeta.id ?? null,
-        dimensionPath: basePath,
-        scenePath: path.join(basePath, sceneName),
-        widgetHash: hash,
-      }
-    } catch {
-      return { type: 'not_found' }
-    }
+    return resolveDimension(basePath, parts[1], hash)
   }
 
-  // Standalone scene: folder has meta.json
+  // Check if it's a standalone scene folder
   const metaJsonPath = path.join(basePath, 'meta.json')
   if (fs.existsSync(metaJsonPath)) {
     return {
@@ -167,7 +154,63 @@ function routeToContent(contentPath: string, hash: string): SceneRoute {
     }
   }
 
+  // Not a direct folder match — scan for matching ID
+  // This supports dimensions://go/{dimension-id} and dimensions://go/{scene-id}
+  if (fs.existsSync(DIMENSIONS_DIR)) {
+    for (const entry of fs.readdirSync(DIMENSIONS_DIR, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      const entryPath = path.join(DIMENSIONS_DIR, entry.name)
+
+      // Check dimension ID match
+      const dimPath = path.join(entryPath, 'dimension.json')
+      if (fs.existsSync(dimPath)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(dimPath, 'utf-8'))
+          if (raw.id === identifier) {
+            return resolveDimension(entryPath, parts[1], hash)
+          }
+        } catch {}
+      }
+
+      // Check scene ID match
+      const sceneMeta = path.join(entryPath, 'meta.json')
+      if (fs.existsSync(sceneMeta)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(sceneMeta, 'utf-8'))
+          if (raw.id === identifier) {
+            return {
+              type: 'scene',
+              dimensionId: null,
+              dimensionPath: null,
+              scenePath: entryPath,
+              widgetHash: hash,
+            }
+          }
+        } catch {}
+      }
+    }
+  }
+
   return { type: 'not_found' }
+}
+
+function resolveDimension(dimensionPath: string, sceneSlug: string | undefined, hash: string): SceneRoute {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(dimensionPath, 'dimension.json'), 'utf-8'))
+    const dimMeta = DimensionMetaSchema.parse(raw)
+    const sceneName = sceneSlug || dimMeta.entryScene || dimMeta.scenes[0]
+    if (!sceneName) return { type: 'not_found' }
+    if (!dimMeta.scenes.includes(sceneName)) return { type: 'not_found' }
+    return {
+      type: 'scene',
+      dimensionId: dimMeta.id ?? null,
+      dimensionPath: dimensionPath,
+      scenePath: path.join(dimensionPath, sceneName),
+      widgetHash: hash,
+    }
+  } catch {
+    return { type: 'not_found' }
+  }
 }
 
 /**
