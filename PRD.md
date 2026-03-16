@@ -415,10 +415,20 @@ sdk.notify(title: string, body?: string): Promise<void>
 
 ---
 
-## 7. Widget Manifest
+## 7. Widget Manifest & Instance IDs
 
-Every widget declares what it is and what it needs:
+### Widget Type vs Widget Instance
 
+A widget **manifest** declares the widget *type* — what it is and what it needs. The manifest `id` is a human-readable name (e.g. `"morning-weather"`) and identifies the *kind* of widget.
+
+A widget **entry** in `meta.json` is an *instance* of a widget type placed in a scene. Each entry has a ULID `id` that is unique per placement. This means you can place the same widget type multiple times in a scene — each gets its own ULID, its own KV storage, its own position.
+
+```
+Widget manifest (type):   "morning-weather"    ← human-readable, shared
+Widget entry (instance):  "01ABC123..."         ← ULID, unique per placement
+```
+
+**Widget manifest (`widget.manifest.json`):**
 ```json
 {
   "id": "morning-weather",
@@ -439,6 +449,18 @@ Every widget declares what it is and what it needs:
   ]
 }
 ```
+
+**Widget entry in `meta.json`:**
+```json
+{
+  "id": "01JRQX7B00WEATHER00001",
+  "widgetType": "morning-weather",
+  "manifestPath": "widgets/morning-weather/src/widget.manifest.json",
+  "bounds": { "x": 50, "y": 50, "width": 400, "height": 300 }
+}
+```
+
+The instance ULID is what gets passed through the SDK as `widgetId`. KV storage, capability grants, and env bindings are all scoped per instance — two weather widgets in the same scene have independent data.
 
 Validated with Zod on load. Invalid manifest = widget won't mount + clear error in editor.
 

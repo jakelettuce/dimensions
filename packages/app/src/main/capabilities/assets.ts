@@ -24,16 +24,13 @@ export const assetsCapability: CapabilityModule = {
         return { error: 'capability_denied', capability: 'assets', widgetId }
       }
 
-      // Resolve asset path within widget's assets/ directory
-      const widgetDir = resolveWidgetDir(widget.scenePath, widgetId)
-      if (!widgetDir) return { error: 'widget_dir_not_found' }
-
-      const assetsDir = path.join(widgetDir, 'assets')
+      // Use widgetDir from WidgetState (resolved at scene load time)
+      const assetsDir = path.join(widget.widgetDir, 'assets')
       if (!fs.existsSync(assetsDir)) {
         fs.mkdirSync(assetsDir, { recursive: true })
       }
 
-      // Sanitize filename — strip path separators
+      // Sanitize filename
       const safeName = path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_')
       const assetPath = path.join(assetsDir, safeName)
 
@@ -43,16 +40,14 @@ export const assetsCapability: CapabilityModule = {
         return { error: 'path_traversal_blocked' }
       }
 
-      // Decode base64 and write
       const buffer = Buffer.from(base64, 'base64')
       fs.writeFileSync(assetPath, buffer)
 
-      // Return dimensions-asset:// URL
       const relPath = path.relative(DIMENSIONS_DIR, assetPath).split(path.sep).join('/')
       return `dimensions-asset://${relPath}`
     })
 
-    // sdk.assets.resolve(assetUrl) — convert dimensions-asset:// URL to a usable URL
+    // sdk.assets.resolve(assetUrl)
     ctx.ipcMain.handle('sdk:assets:resolve', async (_event, widgetId: unknown, assetUrl: unknown) => {
       if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
       if (typeof assetUrl !== 'string') return { error: 'invalid_url' }
@@ -66,7 +61,6 @@ export const assetsCapability: CapabilityModule = {
         return { error: 'capability_denied', capability: 'assets', widgetId }
       }
 
-      // dimensions-asset:// URLs are directly usable in iframes served from the same protocol
       return assetUrl
     })
 
@@ -83,10 +77,7 @@ export const assetsCapability: CapabilityModule = {
         return { error: 'capability_denied', capability: 'assets', widgetId }
       }
 
-      const widgetDir = resolveWidgetDir(widget.scenePath, widgetId)
-      if (!widgetDir) return []
-
-      const assetsDir = path.join(widgetDir, 'assets')
+      const assetsDir = path.join(widget.widgetDir, 'assets')
       if (!fs.existsSync(assetsDir)) return []
 
       const files = fs.readdirSync(assetsDir)
@@ -112,24 +103,4 @@ export const assetsCapability: CapabilityModule = {
         })
     })
   },
-}
-
-function resolveWidgetDir(scenePath: string, widgetId: string): string | null {
-  const widgetsDir = path.join(scenePath, 'widgets')
-  if (!fs.existsSync(widgetsDir)) return null
-
-  // Find widget directory by checking manifests
-  const entries = fs.readdirSync(widgetsDir)
-  for (const entry of entries) {
-    const manifestPath = path.join(widgetsDir, entry, 'src', 'widget.manifest.json')
-    if (fs.existsSync(manifestPath)) {
-      try {
-        const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
-        if (raw.id === widgetId) {
-          return path.join(widgetsDir, entry)
-        }
-      } catch {}
-    }
-  }
-  return null
 }

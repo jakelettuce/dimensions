@@ -71,7 +71,8 @@ export interface SceneMeta {
 }
 
 export interface WidgetEntry {
-  id: string
+  id: string              // ULID instance ID — unique per placement in scene
+  widgetType: string      // human-readable type from manifest (e.g. "weather-widget")
   manifest: WidgetManifest
   bounds: Bounds
   props?: Record<string, any>

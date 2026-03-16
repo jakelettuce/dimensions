@@ -213,29 +213,13 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
     const scene = loadSceneFromDisk(scenePath, dimensionId)
     dimWin.currentScene = scene
 
-    // Initial build of all widgets (async, non-blocking)
-    // This ensures bundles exist with SDK injected before the scene loads
+    // Initial build of all custom widgets (async, non-blocking)
+    // Uses widgetDir from WidgetState — no scanning needed
     const widgetBuildPromises = Array.from(scene.widgets.values())
       .filter((w) => w.manifest.type === 'custom')
       .map(async (w) => {
-        const srcDir = path.join(scenePath, 'widgets', w.id, 'src')
-        // Also try to find src dir by scanning widget directories
-        const widgetsDir = path.join(scenePath, 'widgets')
-        const fs = require('fs')
-        if (fs.existsSync(widgetsDir)) {
-          for (const entry of fs.readdirSync(widgetsDir)) {
-            const manifestPath = path.join(widgetsDir, entry, 'src', 'widget.manifest.json')
-            if (fs.existsSync(manifestPath)) {
-              try {
-                const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
-                if (raw.id === w.id) {
-                  await buildWidget(path.join(widgetsDir, entry, 'src'))
-                  return
-                }
-              } catch {}
-            }
-          }
-        }
+        const srcDir = path.join(w.widgetDir, 'src')
+        await buildWidget(srcDir)
       })
 
     // Wait for initial builds, then generate scene HTML and load

@@ -7,9 +7,11 @@ import { DIMENSIONS_DIR } from './constants'
 // ── Widget state (runtime, not persisted) ──
 
 export interface WidgetState {
-  id: string
+  id: string              // ULID instance ID (unique per placement in scene)
+  widgetType: string      // human-readable type from manifest (e.g. "test-widget")
   manifest: WidgetManifest
   bundlePath: string | null // absolute path to dist/bundle.html
+  widgetDir: string       // absolute path to the widget directory (contains src/ and dist/)
   scenePath: string
 }
 
@@ -68,15 +70,18 @@ export function loadSceneFromDisk(scenePath: string, dimensionId: string | null)
       const rawManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
       const manifest = WidgetManifestSchema.parse(rawManifest)
 
-      // Check for compiled bundle
-      const widgetDir = path.dirname(manifestPath)
-      const parentDir = path.dirname(widgetDir) // widgets/my-widget/src -> widgets/my-widget
-      const bundlePath = path.join(parentDir, 'dist', 'bundle.html')
+      // manifestPath points to widgets/<name>/src/widget.manifest.json
+      // widgetDir is widgets/<name>/
+      const srcDir = path.dirname(manifestPath)
+      const widgetDir = path.dirname(srcDir)
+      const bundlePath = path.join(widgetDir, 'dist', 'bundle.html')
 
       widgets.set(entry.id, {
         id: entry.id,
+        widgetType: entry.widgetType,
         manifest,
         bundlePath: fs.existsSync(bundlePath) ? bundlePath : null,
+        widgetDir,
         scenePath,
       })
     } catch (err) {

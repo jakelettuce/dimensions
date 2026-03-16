@@ -53,9 +53,13 @@ export const BoundsSchema = z.object({
 })
 
 // ── Widget Entry (in scene meta) ──
+// `id` is a ULID — unique per instance. Two copies of the same widget get different IDs.
+// `widgetType` is the human-readable name from widget.manifest.json (e.g. "weather-widget").
+// `manifestPath` points to the manifest file within the scene folder.
 
 export const WidgetEntrySchema = z.object({
-  id: z.string(),
+  id: z.string(),           // ULID instance ID — unique even if same widget placed twice
+  widgetType: z.string(),   // human-readable type from manifest (e.g. "test-widget")
   manifestPath: z.string(), // relative path to widget.manifest.json within the scene
   bounds: BoundsSchema,
   props: z.record(z.any()).optional(),
