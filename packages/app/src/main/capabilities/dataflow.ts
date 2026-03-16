@@ -1,27 +1,7 @@
 import type { CapabilityModule, CapabilityContext } from './index'
-import { assertCapability } from './index'
+import { getPortal } from '../webportal-manager'
 
-/**
- * Dataflow engine — routes values between widget outputs and inputs
- * based on the scene's connections.json wiring.
- *
- * IPC channel (fire-and-forget, already whitelisted):
- *   sdk:emit  — args: widgetId, outputKey, value
- *
- * Scene WCV contract:
- *   The scene preload must handle 'scene:dataflow-input' IPC messages
- *   with shape { targetWidgetId: string, inputKey: string, value: any }
- *   and forward them to the target widget iframe via postMessage:
- *     { type: 'sdk-dataflow-input', key: string, value: any }
- */
-
-// ── Portal output helper ──
-
-/**
- * Called by webportal-manager when a portal emits an output
- * (e.g. did-navigate -> 'currentUrl', page-title-updated -> 'pageTitle').
- * Routes the value through the connection graph to any wired inputs.
- */
+// Portal dataflow output helper — called by webportal-manager when a portal emits
 export function emitPortalOutput(
   widgetId: string,
   outputKey: string,
@@ -47,11 +27,6 @@ export function emitPortalOutput(
   }
 }
 
-// ── Internal delivery helpers ──
-
-/**
- * Send a dataflow value to a custom widget iframe via the scene WCV.
- */
 function deliverToCustomWidget(
   targetWidgetId: string,
   inputKey: string,
@@ -71,37 +46,12 @@ function deliverToCustomWidget(
   })
 }
 
-/**
- * Deliver a dataflow value to a webportal's special inputs.
- * Supported inputs:
- *   - 'navigateTo' — load a URL in the portal's active tab
- *   - 'injectCSS'  — insert CSS into the portal's active tab
- *   - 'switchTab'  — switch to a specific tab by ID
- *
- * NOTE: Requires webportal-manager to export getPortal(id).
- * Until that export exists, we use a lazy require to access the function.
- */
 function deliverToPortal(
   portalWidgetId: string,
   inputKey: string,
   value: any,
   ctx: CapabilityContext,
 ): void {
-  // Lazy require to avoid circular deps and to pick up the getPortal export
-  // when it becomes available in webportal-manager.
-  let getPortal: (id: string) => any
-  try {
-    getPortal = require('../webportal-manager').getPortal
-  } catch {
-    console.warn('[dataflow] webportal-manager.getPortal not available yet')
-    return
-  }
-
-  if (!getPortal) {
-    console.warn('[dataflow] webportal-manager.getPortal not exported yet')
-    return
-  }
-
   const portal = getPortal(portalWidgetId)
   if (!portal) return
 
@@ -132,45 +82,29 @@ function deliverToPortal(
 
     case 'switchTab': {
       if (typeof value !== 'string') break
-      // Lazy require for switchTab helper
-      // For now, switch via the portal IPC path by finding the window
+      // Import switchTab from webportal-manager's IPC handler
+      // The portal-manager's switchTab is internal, so call it via the portal instance
       const dimWin = ctx.getWindow(portalWidgetId)
       if (!dimWin) break
 
-      const { ipcMain } = require('electron')
-      // Invoke the already-registered handler indirectly isn't clean.
-      // Instead, directly manipulate the portal: hide old tab, show new tab.
-      const targetTab = portal.tabs.get(value)
-      if (!targetTab) break
+      if (!portal.tabs.has(value) || portal.activeTabId === value) break
 
-      if (portal.activeTabId !== value) {
-        const oldTab = portal.tabs.get(portal.activeTabId)
-        if (oldTab && !dimWin.browserWindow.isDestroyed()) {
-          try {
-            dimWin.browserWindow.contentView.removeChildView(oldTab.contentWCV)
-          } catch {}
-        }
-        portal.activeTabId = value
-        if (!dimWin.browserWindow.isDestroyed()) {
-          dimWin.browserWindow.contentView.addChildView(targetTab.contentWCV)
-        }
+      // Use the exported switchTab logic from webportal-manager
+      const { switchPortalTab } = require('../webportal-manager')
+      if (switchPortalTab) {
+        switchPortalTab(portal, value, dimWin)
       }
       break
     }
 
     default:
-      console.warn(`[dataflow] Unknown portal input key: "${inputKey}" on widget ${portalWidgetId}`)
+      break
   }
 }
-
-// ── Capability module ──
 
 export const dataflowCapability: CapabilityModule = {
   name: 'dataflow',
   register(ctx: CapabilityContext) {
-    // sdk:emit — fire-and-forget (on() not handle())
-    // Any widget can emit outputs; no special capability required.
-    // The connections.json wiring determines where values go.
     ctx.ipcMain.on(
       'sdk:emit',
       (_event, widgetId: unknown, outputKey: unknown, value: unknown) => {
@@ -182,17 +116,10 @@ export const dataflowCapability: CapabilityModule = {
         const scene = ctx.getScene(widgetId)
         if (!scene) return
 
-        // Validate that this widget declares the output in its manifest
         const declaredOutputs = widget.manifest.outputs ?? []
         const hasOutput = declaredOutputs.some((o) => o.key === outputKey)
-        if (!hasOutput) {
-          console.warn(
-            `[dataflow] Widget "${widgetId}" emitted undeclared output "${outputKey}", ignoring`,
-          )
-          return
-        }
+        if (!hasOutput) return
 
-        // Route to all connected inputs
         const connections = scene.connections.filter(
           (c) => c.from.widgetId === widgetId && c.from.output === outputKey,
         )

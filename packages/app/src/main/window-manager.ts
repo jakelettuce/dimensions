@@ -189,8 +189,13 @@ export function createWindow(db: Database): DimensionsWindow {
     if (dimWin.prewarmedWCV) {
       cleanupWCV(dimWin.prewarmedWCV)
     }
-    // Destroy terminals for this window
+    // Destroy terminals and WebSocket connections for this window
     destroyTerminalsForWindow(windowId)
+    // Lazy require to avoid circular dependency (websocket.ts is part of capabilities system)
+    try {
+      const { cleanupWebSocketsForWindow } = require('./capabilities/websocket')
+      cleanupWebSocketsForWindow(windowId)
+    } catch {}
 
     windows.delete(windowId)
 

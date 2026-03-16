@@ -387,7 +387,7 @@ function closeTab(
   sendTabsUpdate(portal)
 }
 
-function switchTab(
+export function switchPortalTab(
   portal: PortalInstance,
   tabId: string,
   dimWin: DimensionsWindow,
@@ -843,7 +843,7 @@ export function registerPortalIpcHandlers(): void {
       if (!result) return
 
       const { portal, dimWin } = result
-      switchTab(portal, tabId, dimWin)
+      switchPortalTab(portal, tabId, dimWin)
     },
   )
 }
