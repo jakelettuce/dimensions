@@ -16,6 +16,7 @@ const INVOKE_CHANNELS = new Set([
   'write-file',
   'create-terminal',
   'destroy-terminal',
+  'palette-close',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -98,6 +99,9 @@ contextBridge.exposeInMainWorld('dimensions', {
   removeTerminalOutputListener: (id: string) => {
     ipcRenderer.removeAllListeners(`terminal-output:${id}`)
   },
+
+  // Palette close (restore scene WCV)
+  paletteClose: () => ipcRenderer.invoke('palette-close'),
 
   // Widget selection (from scene WCV)
   onWidgetSelect: (cb: (widgetId: string) => void) => {

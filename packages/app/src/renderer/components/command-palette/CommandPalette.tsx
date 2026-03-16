@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
 import { Search } from 'lucide-react'
@@ -6,6 +6,12 @@ import { Search } from 'lucide-react'
 export function CommandPalette() {
   const { paletteOpen, closePalette } = useAppStore()
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleClose = useCallback(() => {
+    closePalette()
+    // Notify main process to restore scene WCV visibility
+    window.dimensions.paletteClose()
+  }, [closePalette])
 
   useEffect(() => {
     if (paletteOpen && inputRef.current) {
@@ -17,18 +23,18 @@ export function CommandPalette() {
   useEffect(() => {
     if (!paletteOpen) return
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closePalette()
+      if (e.key === 'Escape') handleClose()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [paletteOpen, closePalette])
+  }, [paletteOpen, handleClose])
 
   if (!paletteOpen) return null
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
-      onClick={closePalette}
+      onClick={handleClose}
     >
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/50" />
