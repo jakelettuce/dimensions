@@ -121,8 +121,8 @@ Main Process (Node.js, fully trusted)
   ├── File watcher (chokidar) → esbuild → hot reload
   ├── IPC handlers (capability-gated SDK calls)
   ├── Capability modules (pluggable)
-  ├── dimensions:// protocol resolver
-  ├── asset:// protocol handler
+  ├── dimensions:// protocol resolver (navigation, routing)
+  ├── dimensions-asset:// protocol handler (static file serving, read-only)
   ├── SQLite database (sql.js — WASM, no native modules)
   ├── Env/secrets manager
   └── CLAUDE.md generator
@@ -357,8 +357,8 @@ sdk.kv.delete(key: string): Promise<void>
 sdk.kv.list(prefix?: string): Promise<string[]>
 
 // assets — requires "assets"
-sdk.assets.upload(file: File): Promise<string>      // returns asset:// URL
-sdk.assets.resolve(assetUrl: string): Promise<string> // asset:// → usable URL
+sdk.assets.upload(file: File): Promise<string>      // returns dimensions-asset:// URL
+sdk.assets.resolve(assetUrl: string): Promise<string> // dimensions-asset:// → usable URL
 sdk.assets.list(): Promise<AssetInfo[]>
 
 // network — requires "network"
