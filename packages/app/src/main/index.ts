@@ -15,6 +15,7 @@ import type { WidgetState, SceneState } from './scene-manager'
 import type { DimensionsWindow } from './window-manager'
 import { registerCapabilities } from './capabilities/index'
 import { registerTerminalIpcHandlers } from './terminal'
+import { registerPortalIpcHandlers } from './webportal-manager'
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts'
 import { HOME_SCENE_DIR } from './constants'
 import { sanitizeIpcData } from './ipc-safety'
@@ -28,6 +29,7 @@ app.whenReady().then(async () => {
   registerProtocolHandlers()
   registerWindowIpcHandlers()
   registerTerminalIpcHandlers()
+  registerPortalIpcHandlers()
   registerGlobalShortcuts()
 
   // Register capability system

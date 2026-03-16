@@ -12,6 +12,7 @@ import { watchScene, stopWatching } from './watcher'
 import { sanitizeIpcData } from './ipc-safety'
 import { buildWidget } from './builder'
 import { destroyTerminalsForWindow } from './terminal'
+import { repositionPortals, freezePortals, mountAllWebportals, destroyAllPortals } from './webportal-manager'
 import type { Database } from 'sql.js'
 
 // ── Types ──
@@ -241,6 +242,9 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
       const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
 
       dimWin.sceneWCV.webContents.loadURL(sceneUrl)
+
+      // Mount webportal widgets after scene loads
+      mountAllWebportals(dimWin)
     }).catch((err) => {
       console.error('Widget initial build error:', err)
     })
@@ -318,17 +322,15 @@ function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
   if (actual.width === 0 || actual.height === 0) {
     console.warn('Scene WCV zero-size after resize:', actual)
   }
+
+  // Reposition all portal WCVs to match the new scene WCV position
+  repositionPortals(dimWin)
 }
 
 // ── Scene cleanup ──
 
 export function cleanupPortalsForWindow(dimWin: DimensionsWindow): void {
-  for (const [, wcv] of dimWin.portalWCVs) {
-    cleanupWCV(wcv)
-    if (!dimWin.browserWindow.isDestroyed()) {
-      dimWin.browserWindow.contentView.removeChildView(wcv)
-    }
-  }
+  destroyAllPortals(dimWin)
   dimWin.portalWCVs.clear()
 }
 
@@ -342,9 +344,8 @@ export function toggleEditMode(dimWin: DimensionsWindow): boolean {
     dimWin.sceneWCV.webContents.send('scene:edit-mode', dimWin.editMode)
   }
 
-  for (const portalWcv of dimWin.portalWCVs.values()) {
-    portalWcv.webContents.setIgnoreMouseEvents(dimWin.editMode)
-  }
+  // Freeze/unfreeze all portal WCVs (chrome + content)
+  freezePortals(dimWin, dimWin.editMode)
 
   updateSceneWCVBounds(dimWin)
   return dimWin.editMode
