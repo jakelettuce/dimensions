@@ -17,6 +17,7 @@ import { registerCapabilities } from './capabilities/index'
 import { registerTerminalIpcHandlers } from './terminal'
 import { registerPortalIpcHandlers, repositionPortals } from './webportal-manager'
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts'
+import { registerFileOperationHandlers } from './file-operations'
 import { HOME_SCENE_DIR } from './constants'
 import { sanitizeIpcData } from './ipc-safety'
 
@@ -30,6 +31,7 @@ app.whenReady().then(async () => {
   registerWindowIpcHandlers()
   registerTerminalIpcHandlers()
   registerPortalIpcHandlers()
+  registerFileOperationHandlers()
   registerGlobalShortcuts()
 
   // Register capability system

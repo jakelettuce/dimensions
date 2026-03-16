@@ -56,6 +56,22 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       timestamp  INTEGER NOT NULL
     )`,
   },
+  {
+    version: 6,
+    sql: `CREATE TABLE IF NOT EXISTS env_values (
+      key              TEXT PRIMARY KEY,
+      encrypted_value  BLOB NOT NULL
+    )`,
+  },
+  {
+    version: 7,
+    sql: `CREATE TABLE IF NOT EXISTS widget_secrets (
+      widget_id        TEXT NOT NULL,
+      key              TEXT NOT NULL,
+      encrypted_value  BLOB NOT NULL,
+      PRIMARY KEY (widget_id, key)
+    )`,
+  },
 ]
 
 function ensureSchemaVersionTable(database: Database): void {

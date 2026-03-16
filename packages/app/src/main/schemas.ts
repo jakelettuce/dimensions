@@ -39,6 +39,7 @@ export const WidgetManifestSchema = z.object({
   allowedWsHosts: z.array(z.string()).optional(),
   envKeys: z.array(z.string()).optional(),
   url: z.string().optional(), // default URL for webportal widgets
+  targetPortals: z.array(z.string()).optional(), // portal-control: allowed portal widget IDs
   inputs: z.array(WidgetInputSchema).optional(),
   outputs: z.array(WidgetOutputSchema).optional(),
   props: z.array(WidgetPropSchema).optional(),

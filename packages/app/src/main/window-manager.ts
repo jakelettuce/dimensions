@@ -13,6 +13,7 @@ import { sanitizeIpcData } from './ipc-safety'
 import { buildWidget } from './builder'
 import { destroyTerminalsForWindow } from './terminal'
 import { repositionPortals, freezePortals, mountAllWebportals, destroyAllPortals } from './webportal-manager'
+import { generateClaudeMd } from './claude-md'
 import type { Database } from 'sql.js'
 
 // ── Types ──
@@ -245,6 +246,11 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
 
       // Mount webportal widgets after scene loads
       mountAllWebportals(dimWin)
+
+      // Generate CLAUDE.md for Claude Code context
+      if (dimWin.currentScene) {
+        generateClaudeMd(dimWin.currentScene)
+      }
     }).catch((err) => {
       console.error('Widget initial build error:', err)
     })
@@ -265,10 +271,11 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
           // Notify scene WCV to reload the widget iframe
           dimWin.sceneWCV.webContents.send('scene:widget-reload', widgetId)
 
-          // Also regenerate scene HTML in case widgets changed
+          // Also regenerate scene HTML and CLAUDE.md
           if (dimWin.currentScene) {
             const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
             dimWin.currentScene = updatedScene
+            generateClaudeMd(updatedScene)
           }
         } else {
           console.error(`Widget ${widgetId} build failed:`, error)

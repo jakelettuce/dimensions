@@ -42,12 +42,30 @@ import { kvCapability } from './kv'
 import { assetsCapability } from './assets'
 import { navigateCapability } from './navigate'
 import { themeCapability } from './theme'
+import { networkCapability } from './network'
+import { websocketCapability } from './websocket'
+import { envCapability } from './env'
+import { secretsCapability } from './secrets'
+import { editingCapability } from './editing'
+import { clipboardCapability } from './clipboard'
+import { notificationsCapability } from './notifications'
+import { dataflowCapability } from './dataflow'
+import { portalControlCapability } from './portal-control'
 
 const ALL_CAPABILITIES: CapabilityModule[] = [
   kvCapability,
   assetsCapability,
   navigateCapability,
   themeCapability,
+  networkCapability,
+  websocketCapability,
+  envCapability,
+  secretsCapability,
+  editingCapability,
+  clipboardCapability,
+  notificationsCapability,
+  dataflowCapability,
+  portalControlCapability,
 ]
 
 // ── Registration ──

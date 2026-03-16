@@ -20,10 +20,11 @@ export type {
   DimensionMeta,
   Connection,
   PortalRule,
+  PortalState,
   DimensionsSDK,
 } from './types'
 
-import type { Bounds, ThemeVars, AssetInfo, SDKResponse, WSConnection, DimensionsSDK } from './types'
+import type { Bounds, ThemeVars, AssetInfo, SDKResponse, WSConnection, PortalState, DimensionsSDK } from './types'
 
 // ── Context injected by host ──
 
@@ -209,6 +210,17 @@ export const sdk: DimensionsSDK = {
     onChange: (cb: (vars: ThemeVars) => void) => {
       themeListeners.push(cb)
     },
+  },
+
+  // portal control — requires "portal-control"
+  portal: {
+    navigate: (portalWidgetId: string, url: string) => call('sdk:portal:navigate', portalWidgetId, url),
+    injectCSS: (portalWidgetId: string, css: string) => call('sdk:portal:injectCSS', portalWidgetId, css),
+    removeCSS: (portalWidgetId: string, key: string) => call('sdk:portal:removeCSS', portalWidgetId, key),
+    newTab: (portalWidgetId: string, url?: string) => call<string>('sdk:portal:newTab', portalWidgetId, url),
+    closeTab: (portalWidgetId: string, tabId: string) => call('sdk:portal:closeTab', portalWidgetId, tabId),
+    switchTab: (portalWidgetId: string, tabId: string) => call('sdk:portal:switchTab', portalWidgetId, tabId),
+    getState: (portalWidgetId: string) => call<PortalState>('sdk:portal:getState', portalWidgetId),
   },
 
   // clipboard — requires "clipboard"

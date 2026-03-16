@@ -1,0 +1,159 @@
+import fs from 'fs'
+import path from 'path'
+import type { SceneState } from './scene-manager'
+
+/**
+ * Generate a CLAUDE.md context file in a scene folder.
+ * Claude Code reads this automatically for project context.
+ */
+export function generateClaudeMd(scene: SceneState): void {
+  const widgetLines: string[] = []
+  for (const entry of scene.meta.widgets) {
+    const widget = scene.widgets.get(entry.id)
+    if (!widget) continue
+    const { x, y, width, height } = entry.bounds
+    const caps = widget.manifest.capabilities.length > 0
+      ? widget.manifest.capabilities.join(', ')
+      : 'none'
+    widgetLines.push(
+      `- **${widget.manifest.title}** (\`${entry.id}\`, type: ${widget.manifest.type}) at (${x}, ${y}) ${width}\u00d7${height}\n  - Capabilities: ${caps}`,
+    )
+  }
+
+  const widgetsSection = widgetLines.length > 0
+    ? widgetLines.join('\n')
+    : '_No widgets in this scene._'
+
+  const content = `# Dimensions Scene Context
+
+## Scene: ${scene.meta.title}
+**ID:** ${scene.id}
+**Slug:** ${scene.slug}
+**Path:** ${scene.path}
+
+### Active Widgets
+${widgetsSection}
+
+## @dimensions/sdk API Reference
+
+The SDK is automatically injected into every custom widget. Access it via \`window.sdk\`.
+
+### Always Available (no capability required)
+- \`sdk.scene.id()\` \u2192 string \u2014 Current scene ID
+- \`sdk.scene.title()\` \u2192 string \u2014 Current scene title
+
+### Key-Value Storage (requires "kv")
+- \`sdk.kv.get(key)\` \u2192 Promise<any> \u2014 Get value by key
+- \`sdk.kv.set(key, value)\` \u2192 Promise<void> \u2014 Set value (JSON serialized, max 10MB)
+- \`sdk.kv.delete(key)\` \u2192 Promise<void> \u2014 Delete key
+- \`sdk.kv.list(prefix?)\` \u2192 Promise<string[]> \u2014 List keys matching prefix
+
+### Assets (requires "assets")
+- \`sdk.assets.upload(file)\` \u2192 Promise<string> \u2014 Upload file, returns dimensions-asset:// URL
+- \`sdk.assets.resolve(url)\` \u2192 Promise<string> \u2014 Validate and resolve asset URL
+- \`sdk.assets.list()\` \u2192 Promise<AssetInfo[]> \u2014 List widget assets
+
+### Network (requires "network")
+- \`sdk.fetch(url, options?)\` \u2192 Promise<{status, headers, body}> \u2014 Proxied HTTP request (no CORS)
+  - Manifest must declare \`allowedHosts\` array
+
+### WebSocket (requires "websocket")
+- \`sdk.ws.connect(url)\` \u2192 Promise<connectionId> \u2014 Open WebSocket connection
+  - Manifest must declare \`allowedWsHosts\` array
+
+### Environment Variables (requires "env")
+- \`sdk.env.get(key)\` \u2192 Promise<string|null> \u2014 Read env variable
+  - Manifest must declare \`envKeys\` array
+
+### Secrets (requires "secrets")
+- \`sdk.secrets.get(key)\` \u2192 Promise<string|null>
+- \`sdk.secrets.set(key, value)\` \u2192 Promise<void>
+- \`sdk.secrets.delete(key)\` \u2192 Promise<void>
+
+### Editing (requires "editing")
+- \`sdk.editing.setWidgetBounds(id, bounds)\` \u2192 Promise<void>
+- \`sdk.editing.getWidgetBounds(id)\` \u2192 Promise<Bounds>
+- \`sdk.editing.selectWidget(id)\` \u2192 Promise<void>
+
+### Dataflow (requires "dataflow")
+- \`sdk.emit(outputKey, value)\` \u2192 void \u2014 Emit value to connected widgets
+- \`sdk.on(inputKey, cb)\` \u2192 void \u2014 Listen for values from connected widgets
+
+### Navigation (requires "navigate")
+- \`sdk.navigate.to(url)\` \u2192 void \u2014 Navigate to dimensions:// URL
+- \`sdk.navigate.back()\` \u2192 void
+- \`sdk.navigate.forward()\` \u2192 void
+
+### Portal Control (requires "portal-control")
+- \`sdk.portal.navigate(portalId, url)\` \u2192 Promise<void>
+- \`sdk.portal.injectCSS(portalId, css)\` \u2192 Promise<void>
+- \`sdk.portal.removeCSS(portalId, key)\` \u2192 Promise<void>
+- \`sdk.portal.newTab(portalId, url?)\` \u2192 Promise<string>
+- \`sdk.portal.closeTab(portalId, tabId)\` \u2192 Promise<void>
+- \`sdk.portal.switchTab(portalId, tabId)\` \u2192 Promise<void>
+- \`sdk.portal.getState(portalId)\` \u2192 Promise<PortalState>
+
+### Theme (requires "theme")
+- \`sdk.theme.get()\` \u2192 Promise<ThemeVars>
+- \`sdk.theme.onChange(cb)\` \u2192 void
+
+### Clipboard (requires "clipboard")
+- \`sdk.clipboard.read()\` \u2192 Promise<string>
+- \`sdk.clipboard.write(text)\` \u2192 Promise<void>
+
+### Notifications (requires "notifications")
+- \`sdk.notify(title, body?)\` \u2192 Promise<void>
+
+## Widget Manifest Schema
+
+\`\`\`json
+{
+  "id": "my-widget",           // human-readable type name
+  "type": "custom|webportal|terminal",
+  "title": "Display Name",
+  "capabilities": ["kv", "network", ...],
+  "allowedHosts": ["api.example.com"],
+  "allowedWsHosts": ["ws.example.com"],
+  "envKeys": ["API_KEY"],
+  "url": "https://...",        // webportal only
+  "targetPortals": ["portal-id"],  // portal-control only
+  "inputs": [{ "key": "name", "type": "string", "default": "value" }],
+  "outputs": [{ "key": "name", "type": "string" }],
+  "props": [{ "key": "name", "type": "string|number|boolean|select", "label": "Label", "default": "value" }]
+}
+\`\`\`
+
+## Building Widgets
+
+- Source: \`widgets/<name>/src/index.html\` (+ optional \`.ts\`, \`.tsx\`, \`.css\`)
+- esbuild compiles to \`widgets/<name>/dist/bundle.html\` on save
+- SDK is injected automatically \u2014 do NOT bundle it
+- Use \`window.sdk.*\` for all SDK methods
+
+## Dataflow Wiring (connections.json)
+
+\`\`\`json
+[
+  {
+    "from": { "widgetId": "instance-ulid", "output": "outputKey" },
+    "to": { "widgetId": "instance-ulid", "input": "inputKey" }
+  }
+]
+\`\`\`
+
+Widget instance IDs are ULIDs from meta.json, not the human-readable manifest IDs.
+
+## Webportal CSS Injection (portal-rules.json)
+
+\`\`\`json
+[
+  { "domain": "github.com", "css": "body { ... }", "label": "Dark mode", "enabled": true }
+]
+\`\`\`
+
+Rules applied on dom-ready for matching domains. Multiple rules stack in order.
+`
+
+  const outPath = path.join(scene.path, 'CLAUDE.md')
+  fs.writeFileSync(outPath, content, 'utf-8')
+}

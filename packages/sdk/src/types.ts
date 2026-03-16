@@ -142,9 +142,31 @@ export interface DimensionsSDK {
     get(): Promise<ThemeVars>
     onChange(cb: (vars: ThemeVars) => void): void
   }
+  portal: {
+    navigate(portalWidgetId: string, url: string): Promise<void>
+    injectCSS(portalWidgetId: string, css: string): Promise<void>
+    removeCSS(portalWidgetId: string, key: string): Promise<void>
+    newTab(portalWidgetId: string, url?: string): Promise<string>
+    closeTab(portalWidgetId: string, tabId: string): Promise<void>
+    switchTab(portalWidgetId: string, tabId: string): Promise<void>
+    getState(portalWidgetId: string): Promise<PortalState>
+  }
   clipboard: {
     read(): Promise<string>
     write(text: string): Promise<void>
   }
   notify(title: string, body?: string): Promise<void>
+}
+
+export interface PortalState {
+  activeTabId: string
+  tabs: Array<{
+    id: string
+    url: string
+    title: string
+    isLoading: boolean
+    canGoBack: boolean
+    canGoForward: boolean
+    isActive: boolean
+  }>
 }

@@ -49,6 +49,15 @@ export function createMockSDK(overrides?: Partial<DimensionsSDK>): DimensionsSDK
       get: async () => ({ background: '#0a0a0a', accent: '#7c3aed' }),
       onChange: () => {},
     },
+    portal: {
+      navigate: async () => {},
+      injectCSS: async () => {},
+      removeCSS: async () => {},
+      newTab: async () => 'mock-tab',
+      closeTab: async () => {},
+      switchTab: async () => {},
+      getState: async () => ({ activeTabId: 'mock-tab', tabs: [] }),
+    },
     clipboard: {
       read: async () => '',
       write: async () => {},

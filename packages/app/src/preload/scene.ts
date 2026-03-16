@@ -11,6 +11,8 @@ const ALLOWED_SDK_CHANNELS = new Set([
   'sdk:assets:list',
   'sdk:fetch',
   'sdk:ws:connect',
+  'sdk:ws:send',
+  'sdk:ws:close',
   'sdk:env:get',
   'sdk:secrets:get',
   'sdk:secrets:set',
@@ -30,6 +32,14 @@ const ALLOWED_SDK_CHANNELS = new Set([
   'sdk:clipboard:write',
   'sdk:notify',
   'sdk:scene:info',
+  // Portal control
+  'sdk:portal:navigate',
+  'sdk:portal:injectCSS',
+  'sdk:portal:removeCSS',
+  'sdk:portal:newTab',
+  'sdk:portal:closeTab',
+  'sdk:portal:switchTab',
+  'sdk:portal:getState',
 ])
 
 // Fire-and-forget channels (no response expected)
@@ -43,7 +53,6 @@ const FIRE_AND_FORGET = new Set([
   'sdk:widget:select',
 ])
 
-// Strip dangerous keys to prevent prototype pollution
 function sanitize(data: unknown): unknown {
   if (data === null || data === undefined) return data
   if (typeof data !== 'object') return data
@@ -76,13 +85,11 @@ window.addEventListener('message', async (event) => {
 
   const sanitizedArgs = Array.isArray(args) ? args.map(sanitize) : []
 
-  // Fire-and-forget: send to main but don't wait for response
   if (FIRE_AND_FORGET.has(method)) {
     ipcRenderer.invoke(method, ...sanitizedArgs).catch(() => {})
     return
   }
 
-  // Request/response: send and forward result back to iframe
   try {
     const result = await ipcRenderer.invoke(method, ...sanitizedArgs)
     event.source?.postMessage(
@@ -94,6 +101,26 @@ window.addEventListener('message', async (event) => {
       { type: 'sdk-response', callId, result: { error: err.message || 'ipc_error' } },
       { targetOrigin: '*' },
     )
+  }
+})
+
+// ── Dataflow input forwarding ──
+// Main process sends dataflow values to scene WCV, which forwards to the target widget iframe
+
+ipcRenderer.on('scene:dataflow-input', (_e, data: { targetWidgetId: string; inputKey: string; value: any }) => {
+  // Find the target widget iframe and send via postMessage
+  const iframes = document.querySelectorAll('iframe[data-widget-id]')
+  for (const iframe of iframes) {
+    if ((iframe as HTMLIFrameElement).dataset.widgetId === data.targetWidgetId) {
+      const contentWindow = (iframe as HTMLIFrameElement).contentWindow
+      if (contentWindow) {
+        contentWindow.postMessage(
+          { type: 'sdk-dataflow-input', key: data.inputKey, value: sanitize(data.value) },
+          '*',
+        )
+      }
+      break
+    }
   }
 })
 

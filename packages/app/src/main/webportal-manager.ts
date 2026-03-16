@@ -40,6 +40,10 @@ interface PortalInstance {
 
 const portals = new Map<string, PortalInstance>()
 
+export function getPortal(id: string): PortalInstance | undefined {
+  return portals.get(id)
+}
+
 // ── Pre-warmed content WCV pool (one per window) ──
 
 const prewarmedContentWCVs = new Map<string, WebContentsView>()
