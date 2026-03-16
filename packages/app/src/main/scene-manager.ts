@@ -113,13 +113,26 @@ export function generateSceneHtml(scene: SceneState): string {
       if (!widget) return ''
 
       const { x, y, width, height } = entry.bounds
-      // Build asset URL with widget context as search params
-      // dimensions-asset://home/widgets/test-widget/dist/bundle.html?widgetId=X&sceneId=Y&sceneTitle=Z
+      const isBackground = entry.widgetType === '_background'
+
       const baseBundleUrl = widget.bundlePath
         ? `dimensions-asset://${path.relative(DIMENSIONS_DIR, widget.bundlePath).split(path.sep).join('/')}`
         : ''
       const contextParams = `widgetId=${encodeURIComponent(entry.id)}&sceneId=${encodeURIComponent(scene.id)}&sceneTitle=${encodeURIComponent(scene.meta.title)}`
       const bundleUrl = baseBundleUrl ? `${baseBundleUrl}?${contextParams}` : ''
+
+      // _background widget: no handles, no border, renders behind everything
+      if (isBackground) {
+        if (!bundleUrl) return ''
+        return `<iframe
+          id="widget-${entry.id}"
+          data-widget-id="${entry.id}"
+          class="background-widget"
+          src="${bundleUrl}"
+          sandbox="allow-scripts allow-same-origin"
+          style="position:absolute;left:0;top:0;width:100%;height:100%;border:none;z-index:0;"
+        ></iframe>`
+      }
 
       if (!bundleUrl) {
         return `<div class="widget-wrapper" data-widget-id="${entry.id}"
@@ -357,6 +370,14 @@ export function ensureHomeScene(homePath: string): void {
     fs.mkdirSync(homePath, { recursive: true })
   }
 
+  const widgetsDir = path.join(homePath, 'widgets')
+  if (!fs.existsSync(widgetsDir)) {
+    fs.mkdirSync(widgetsDir, { recursive: true })
+  }
+
+  // Ensure _background widget exists
+  ensureBackgroundWidget(homePath)
+
   const metaPath = path.join(homePath, 'meta.json')
   if (!fs.existsSync(metaPath)) {
     const { ulid } = require('ulid')
@@ -365,14 +386,76 @@ export function ensureHomeScene(homePath: string): void {
       title: 'Home',
       slug: 'home',
       theme: { background: '#0a0a0a', accent: '#7c3aed' },
-      widgets: [],
+      widgets: [
+        {
+          id: ulid(),
+          widgetType: '_background',
+          manifestPath: 'widgets/_background/src/widget.manifest.json',
+          bounds: { x: 0, y: 0, width: 4000, height: 4000 },
+        },
+      ],
     }
     fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8')
+  } else {
+    // Ensure existing scenes have the _background widget
+    try {
+      const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+      const hasBackground = raw.widgets?.some((w: any) => w.widgetType === '_background')
+      if (!hasBackground) {
+        const { ulid } = require('ulid')
+        if (!raw.widgets) raw.widgets = []
+        raw.widgets.unshift({
+          id: ulid(),
+          widgetType: '_background',
+          manifestPath: 'widgets/_background/src/widget.manifest.json',
+          bounds: { x: 0, y: 0, width: 4000, height: 4000 },
+        })
+        fs.writeFileSync(metaPath, JSON.stringify(raw, null, 2), 'utf-8')
+      }
+    } catch {}
   }
+}
 
-  // Ensure widgets directory exists
-  const widgetsDir = path.join(homePath, 'widgets')
-  if (!fs.existsSync(widgetsDir)) {
-    fs.mkdirSync(widgetsDir, { recursive: true })
+// Create the _background widget with a default solid color
+function ensureBackgroundWidget(scenePath: string): void {
+  const bgDir = path.join(scenePath, 'widgets', '_background', 'src')
+  if (fs.existsSync(path.join(bgDir, 'widget.manifest.json'))) return
+
+  fs.mkdirSync(bgDir, { recursive: true })
+
+  fs.writeFileSync(
+    path.join(bgDir, 'widget.manifest.json'),
+    JSON.stringify({
+      id: '_background',
+      type: 'custom',
+      title: 'Scene Background',
+      capabilities: ['kv', 'network', 'theme'],
+      allowedHosts: ['*'],
+    }, null, 2),
+    'utf-8',
+  )
+
+  fs.writeFileSync(
+    path.join(bgDir, 'index.html'),
+    `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #0a0a0a;
   }
+</style>
+</head>
+<body>
+<!-- Edit this file to customize the scene background.
+     Examples: gradients, animations, canvas, video, particles.
+     This widget renders behind all other widgets. -->
+</body>
+</html>`,
+    'utf-8',
+  )
 }
