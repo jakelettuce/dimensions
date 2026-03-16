@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { CapabilityModule, CapabilityContext } from './index'
 import { assertCapability } from './index'
+import { repositionPortals } from '../webportal-manager'
 
 export const editingCapability: CapabilityModule = {
   name: 'editing',
@@ -54,6 +55,9 @@ export const editingCapability: CapabilityModule = {
       } catch (err) {
         return { error: 'persist_failed', message: err instanceof Error ? err.message : String(err) }
       }
+
+      // Reposition portal WCVs if a portal widget was moved
+      repositionPortals(dimWin)
 
       return null
     })

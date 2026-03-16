@@ -27,7 +27,7 @@ export const networkCapability: CapabilityModule = {
       }
 
       const allowedHosts = widget.manifest.allowedHosts ?? []
-      if (!allowedHosts.includes(parsedUrl.hostname)) {
+      if (!allowedHosts.includes('*') && !allowedHosts.includes(parsedUrl.hostname)) {
         return { error: 'host_not_allowed', host: parsedUrl.hostname, allowedHosts }
       }
 

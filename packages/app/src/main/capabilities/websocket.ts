@@ -48,7 +48,7 @@ export const websocketCapability: CapabilityModule = {
       }
 
       const allowedWsHosts = widget.manifest.allowedWsHosts ?? []
-      if (!allowedWsHosts.includes(parsedUrl.hostname)) {
+      if (!allowedWsHosts.includes('*') && !allowedWsHosts.includes(parsedUrl.hostname)) {
         return { error: 'host_not_allowed', host: parsedUrl.hostname, allowedWsHosts }
       }
 
