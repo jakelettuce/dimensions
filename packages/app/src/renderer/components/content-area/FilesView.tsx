@@ -125,8 +125,18 @@ export function FilesView({ scenePath }: FilesViewProps) {
 
   // ---- load directory children ----
   const loadChildren = useCallback(async (dirPath: string): Promise<TreeNode[]> => {
-    const entries: DirEntry[] = await window.dimensions.readDir(dirPath)
-    const sorted = [...entries].sort((a, b) => {
+    const result = await window.dimensions.readDir(dirPath)
+    // readDir returns { error } on failure or an array of { name, isDirectory, size }
+    if (!Array.isArray(result)) return []
+
+    const entries = result
+      .filter((e: any) => e.name && !e.name.startsWith('.'))
+      .map((e: any) => ({
+        name: e.name as string,
+        path: dirPath + '/' + e.name,
+        isDirectory: e.isDirectory as boolean,
+      }))
+    const sorted = entries.sort((a, b) => {
       if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
       return a.name.localeCompare(b.name)
     })
@@ -199,10 +209,15 @@ export function FilesView({ scenePath }: FilesViewProps) {
         await window.dimensions.writeFile(currentPathRef.current, val)
       }
     }
-    const content: string = await window.dimensions.readFile(node.path)
+    const result = await window.dimensions.readFile(node.path)
+    // readFile returns string on success or { error } on failure
+    if (typeof result !== 'string') {
+      setFileContent(`// Error loading file: ${result?.error || 'unknown error'}`)
+      return
+    }
     currentPathRef.current = node.path
     setSelectedFile(node.path)
-    setFileContent(content)
+    setFileContent(result)
     setDirty(false)
   }, [dirty])
 

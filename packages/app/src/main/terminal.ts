@@ -20,9 +20,23 @@ let terminalCounter = 0
 // ── Helpers ──
 
 function getShell(): string {
-  return process.platform === 'win32'
-    ? 'powershell.exe'
-    : process.env.SHELL || '/bin/zsh'
+  if (process.platform === 'win32') return 'powershell.exe'
+
+  // Try SHELL env var first, then common paths
+  const candidates = [
+    process.env.SHELL,
+    '/bin/zsh',
+    '/bin/bash',
+    '/bin/sh',
+  ].filter(Boolean) as string[]
+
+  const fs = require('fs')
+  for (const shell of candidates) {
+    try {
+      if (fs.existsSync(shell)) return shell
+    } catch {}
+  }
+  return '/bin/sh'
 }
 
 function generateTerminalId(): string {
@@ -44,12 +58,22 @@ function createTerminal(
   const id = generateTerminalId()
   const shell = getShell()
 
-  const ptyProcess = pty.spawn(shell, [], {
+  // Use --login to load user's shell configs (.zshrc, .bash_profile, etc.)
+  const args = shell.endsWith('zsh') || shell.endsWith('bash') ? ['--login'] : []
+
+  const ptyProcess = pty.spawn(shell, args, {
     name: 'xterm-256color',
     cols,
     rows,
     cwd,
-    env: process.env as Record<string, string>,
+    env: {
+      ...process.env,
+      // Ensure common env vars are set
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      HOME: process.env.HOME || '',
+      LANG: process.env.LANG || 'en_US.UTF-8',
+    } as Record<string, string>,
   })
 
   // Forward PTY output to the renderer
