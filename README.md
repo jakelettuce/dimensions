@@ -72,8 +72,10 @@ Renderer (app chrome, trusted)
 
 - **Scenes** are folders containing widgets, metadata, and wiring
 - **Widgets** are self-contained HTML/JS/CSS — custom UIs, embedded websites, or terminals
+- **Webportals** embed real websites (Gmail, GitHub, anything) via dual-WebContentsView architecture — browser chrome WCV (URL bar, tabs, nav) + content WCV (the actual site, fully sandboxed). Supports multiple tabs, CSS injection, and per-domain styling rules
 - **Dimensions** group scenes into packages with shared config and ordered flows
-- **`@dimensions/sdk`** gives widgets access to storage, network, navigation, theming, and more — all capability-gated
+- **`@dimensions/sdk`** gives widgets access to storage, network, navigation, theming, portal control, and more — all capability-gated
+- **Dataflow** wires widgets together — a schedule widget can drive a portal's URL, a theme widget can inject CSS into portals, outputs from one widget feed inputs to another via `connections.json`
 - **Two protocols:** `dimensions://` for navigation, `dimensions-asset://` for static file serving — separated for security
 
 ### Edit mode / Use mode
@@ -87,12 +89,20 @@ Renderer (app chrome, trusted)
 Widgets communicate through `@dimensions/sdk` — a lightweight postMessage bridge that routes through the main process. Every SDK method requires a declared capability in the widget's manifest. Capabilities are checked on every IPC call.
 
 ```typescript
-// Example: widget storing data
+// Store persistent data
 await sdk.kv.set('count', 42)       // requires "kv" capability
 const val = await sdk.kv.get('count')
 
-// Example: widget fetching from an API
+// Fetch from an API (proxied through main process, no CORS)
 const res = await sdk.fetch('https://api.example.com/data')  // requires "network" + allowedHosts
+
+// Control a webportal from a custom widget
+await sdk.portal.navigate('email-portal', 'https://mail.google.com')  // requires "portal-control"
+await sdk.portal.injectCSS('email-portal', 'body { background: #000; }')
+
+// Wire widgets together via dataflow
+sdk.emit('searchQuery', 'is:unread')  // other widgets/portals connected to this output receive the value
+sdk.on('selectedItem', (item) => { ... })  // receive values from connected widgets
 ```
 
 ## Getting started

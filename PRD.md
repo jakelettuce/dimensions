@@ -274,6 +274,7 @@ Adding a new capability = adding a new module file + registering it. No changes 
 | `navigate` | `sdk.navigate.*` | — | Scene-to-scene navigation |
 | `theme` | `sdk.theme.*` | — | Read/subscribe to scene theme variables |
 | `terminal` | PTY via IPC | — | Spawn terminal in widget (sandboxed) |
+| `portal-control` | `sdk.portal.*` | `targetPortals: string[]` | Control webportals from custom widgets |
 | `clipboard` | `sdk.clipboard.*` | — | Read/write system clipboard |
 | `notifications` | `sdk.notify()` | — | OS-level notifications |
 
@@ -395,6 +396,15 @@ sdk.navigate.forward(): void
 // theme — requires "theme"
 sdk.theme.get(): Promise<ThemeVars>
 sdk.theme.onChange(cb: (vars: ThemeVars) => void): void
+
+// portal-control — requires "portal-control"
+sdk.portal.navigate(portalWidgetId: string, url: string): Promise<void>
+sdk.portal.injectCSS(portalWidgetId: string, css: string, key?: string): Promise<void>
+sdk.portal.removeCSS(portalWidgetId: string, key: string): Promise<void>
+sdk.portal.newTab(portalWidgetId: string, url?: string): Promise<string>  // returns tabId
+sdk.portal.closeTab(portalWidgetId: string, tabId: string): Promise<void>
+sdk.portal.switchTab(portalWidgetId: string, tabId: string): Promise<void>
+sdk.portal.getState(portalWidgetId: string): Promise<PortalState>
 
 // clipboard — requires "clipboard"
 sdk.clipboard.read(): Promise<string>
@@ -553,7 +563,30 @@ When a webportal loads a page:
 6. Claude Code writes targeted rules to `portal-rules.json`
 7. App applies rules via `webContents.insertCSS()` on page load
 
-Multiple rules per domain stack in order.
+Multiple rules per domain stack in order. CSS is injected on `dom-ready` (before paint) to prevent flash of unstyled content. Injected CSS is reapplied on every navigation since `insertCSS()` doesn't persist across page loads.
+
+### Webportal Architecture
+
+Each webportal uses two WebContentsViews:
+- **Browser chrome WCV** — URL bar, back/forward/reload, tab bar. Our HTML, fully controlled.
+- **Content WCV** — The real website. Fully sandboxed, no preload, no SDK access.
+
+Webportals support multiple tabs per portal, with per-tab navigation history, audio detection, and background throttling for inactive tabs (except tabs playing audio).
+
+### Webportal Dataflow
+
+Webportals participate in the dataflow system via special inputs and outputs:
+
+| Direction | Key | Type | Description |
+|---|---|---|---|
+| Input | `navigateTo` | `string` | Navigate the portal to a URL |
+| Input | `injectCSS` | `string` | Inject CSS into the portal |
+| Input | `switchTab` | `string` | Switch to a tab by ID |
+| Output | `currentUrl` | `string` | Emitted on navigation |
+| Output | `pageTitle` | `string` | Emitted on title change |
+| Output | `activeTabId` | `string` | Emitted on tab switch |
+
+This means a custom widget can drive portal behavior via `connections.json` — e.g., a schedule widget emitting a URL that navigates the email portal. Custom widgets can also use `sdk.portal.*` methods directly via the `portal-control` capability for programmatic control.
 
 ---
 
