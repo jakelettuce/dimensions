@@ -269,27 +269,32 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
 
     // Start watching this scene for file changes
     watchScene(scenePath, {
-      onWidgetBuilt: (widgetId, success, error) => {
+      onWidgetBuilt: (widgetTypeId, success, error) => {
         if (dimWin.browserWindow.isDestroyed()) return
 
         if (success) {
-          // Notify scene WCV to reload the widget iframe
-          dimWin.sceneWCV.webContents.send('scene:widget-reload', widgetId)
-
-          // Also regenerate scene HTML and CLAUDE.md
+          // widgetTypeId is the manifest's human-readable ID (e.g. "test-widget")
+          // We need to find all instance ULIDs that use this widget type and reload them
           if (dimWin.currentScene) {
+            for (const entry of dimWin.currentScene.meta.widgets) {
+              if (entry.widgetType === widgetTypeId) {
+                dimWin.sceneWCV.webContents.send('scene:widget-reload', entry.id)
+              }
+            }
+
+            // Regenerate scene state and CLAUDE.md
             const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
             dimWin.currentScene = updatedScene
             generateClaudeMd(updatedScene)
           }
         } else {
-          console.error(`Widget ${widgetId} build failed:`, error)
+          console.error(`Widget ${widgetTypeId} build failed:`, error)
         }
 
         // Notify renderer of build status
         if (!dimWin.browserWindow.isDestroyed()) {
           dimWin.browserWindow.webContents.send('widget:build-status', sanitizeIpcData({
-            widgetId,
+            widgetId: widgetTypeId,
             success,
             error,
           }))
