@@ -47,6 +47,18 @@ A self-contained piece of a scene. Lives in its own subfolder. Types:
 | **Webportal** | Real website in a WebContentsView — Gmail, GitHub, anything |
 | **Terminal** | node-pty + xterm.js shell, scoped to scene folder |
 
+### Background Widget
+
+Every scene automatically includes a `_background` widget at `widgets/_background/`. It renders full-screen behind all other widgets at z-index 0 — no drag/resize handles in edit mode.
+
+The background is a regular custom widget with full SDK access. By default it's a solid `#0a0a0a` background. Edit `widgets/_background/src/index.html` to customize:
+- Gradients, CSS animations, color cycles
+- Canvas/WebGL (particles, generative art, visualizations)
+- Video backgrounds (`<video>` with `object-fit: cover`)
+- Live data (fetch APIs via `sdk.fetch()`, display weather, stocks, etc.)
+
+The `theme.background` in `meta.json` is a fallback color shown while widgets load — it's not the actual background. The `_background` widget is the actual background.
+
 ### Dimension
 A group of related scenes packaged together. A dimension is a folder containing scene folders plus a `dimension.json` manifest. Standalone scenes live at the top level.
 
@@ -666,22 +678,23 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 
 ### In
 - Full Electron app (macOS + Windows)
-- Scene-as-folder data model
+- Scene-as-folder data model with `_background` widget per scene
 - All widget types (custom, webportal, terminal)
-- Live editing loop (write → build → reload)
-- Edit mode / use mode
-- Editor tools (Claude Code terminal + no-code panel)
-- Files view (Monaco)
-- `@dimensions/sdk` with all V1 capabilities
+- Live editing loop (write → build → reload ~100ms)
+- Edit mode / use mode with global shortcuts (Cmd+E, Cmd+K, etc.)
+- Editor tools (Claude Code terminal + no-code properties panel)
+- Files view (Monaco editor for widget source)
+- `@dimensions/sdk` with all V1 capabilities (kv, assets, network, websocket, env, secrets, editing, dataflow, navigate, theme, portal-control, clipboard, notifications)
 - Pluggable capability framework
+- Dual-WCV webportals with tabs, CSS injection (dom-ready), and CSS extraction for Claude Code
+- Cross-widget portal control via `sdk.portal.*` and dataflow wiring
 - Environment variable management + per-widget grants
-- OS keychain secrets storage
-- SQLite for KV, index, grants, history
-- Webportal CSS injection
-- Widget dataflow wiring
-- `dimensions://` protocol (local)
+- OS keychain secrets storage (safeStorage)
+- SQLite (sql.js/WASM) for KV, index, grants, history
+- Widget dataflow wiring (connections.json)
+- `dimensions://` + `dimensions-asset://` protocols
 - `Cmd+K` command palette
-- CLAUDE.md auto-generation
+- CLAUDE.md auto-generation (full SDK reference, build guidance, background widget docs)
 - Dimensions (scene grouping with shared config and ordered flows)
 
 ### Out (V2+)

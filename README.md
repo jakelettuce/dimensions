@@ -75,7 +75,7 @@ Renderer (app chrome, trusted)
 ### Core concepts
 
 - **Scenes** are folders containing widgets, metadata, and wiring
-- **Widgets** are self-contained HTML/JS/CSS — custom UIs, embedded websites, or terminals
+- **Widgets** are self-contained HTML/JS/CSS — custom UIs, embedded websites, or terminals. Every scene includes a `_background` widget that renders full-screen behind everything else — edit it for gradients, animations, canvas, video, live data, anything
 - **Webportals** embed real websites (Gmail, GitHub, anything) via dual-WebContentsView architecture — browser chrome WCV (URL bar, tabs, nav) + content WCV (the actual site, fully sandboxed). Supports multiple tabs, CSS injection, and per-domain styling rules
 - **Dimensions** group scenes into packages with shared config and ordered flows
 - **`@dimensions/sdk`** gives widgets access to storage, network, navigation, theming, portal control, and more — all capability-gated
