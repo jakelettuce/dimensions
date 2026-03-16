@@ -290,6 +290,7 @@ export function generateSceneHtml(scene: SceneState): string {
           var dy = ev.clientY - startY;
           wrapper.style.left = (origLeft + dx) + 'px';
           wrapper.style.top = (origTop + dy) + 'px';
+          postSdk('sdk:widget:bounds-live', [widgetId, getBoundsFromWrapper(wrapper)]);
         }
         function onUp() {
           document.removeEventListener('mousemove', onMove);
@@ -316,6 +317,7 @@ export function generateSceneHtml(scene: SceneState): string {
           var dh = ev.clientY - startRY;
           wrapper.style.width = Math.max(40, origW + dw) + 'px';
           wrapper.style.height = Math.max(40, origH + dh) + 'px';
+          postSdk('sdk:widget:bounds-live', [widgetId, getBoundsFromWrapper(wrapper)]);
         }
         function onRUp() {
           document.removeEventListener('mousemove', onRMove);

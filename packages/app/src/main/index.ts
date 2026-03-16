@@ -15,7 +15,7 @@ import type { WidgetState, SceneState } from './scene-manager'
 import type { DimensionsWindow } from './window-manager'
 import { registerCapabilities } from './capabilities/index'
 import { registerTerminalIpcHandlers } from './terminal'
-import { registerPortalIpcHandlers } from './webportal-manager'
+import { registerPortalIpcHandlers, repositionPortals } from './webportal-manager'
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts'
 import { HOME_SCENE_DIR } from './constants'
 import { sanitizeIpcData } from './ipc-safety'
@@ -62,22 +62,41 @@ app.whenReady().then(async () => {
     },
   )
 
-  // Widget editing IPC — bounds update from scene drag/resize
-  ipcMain.handle('sdk:widget:bounds-update', (_event, widgetId: unknown, bounds: unknown) => {
+  // Live bounds update — reposition portal WCVs during drag/resize (no disk write)
+  ipcMain.handle('sdk:widget:bounds-live', (_event, widgetId: unknown, bounds: unknown) => {
     if (typeof widgetId !== 'string') return
     if (!bounds || typeof bounds !== 'object') return
-
     const { x, y, width, height } = bounds as any
     if (typeof x !== 'number' || typeof y !== 'number' ||
         typeof width !== 'number' || typeof height !== 'number') return
 
-    // Find the scene and update meta.json
+    for (const dimWin of getAllWindows()) {
+      if (!dimWin.currentScene) continue
+      const entry = dimWin.currentScene.meta.widgets.find((w) => w.id === widgetId)
+      if (entry) {
+        // Update in-memory bounds (no disk write)
+        entry.bounds = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) }
+        // Reposition portal WCVs to match
+        repositionPortals(dimWin)
+        break
+      }
+    }
+  })
+
+  // Final bounds update — persist to meta.json on drop/release
+  ipcMain.handle('sdk:widget:bounds-update', (_event, widgetId: unknown, bounds: unknown) => {
+    if (typeof widgetId !== 'string') return
+    if (!bounds || typeof bounds !== 'object') return
+    const { x, y, width, height } = bounds as any
+    if (typeof x !== 'number' || typeof y !== 'number' ||
+        typeof width !== 'number' || typeof height !== 'number') return
+
     for (const dimWin of getAllWindows()) {
       if (!dimWin.currentScene) continue
       const entry = dimWin.currentScene.meta.widgets.find((w) => w.id === widgetId)
       if (entry) {
         entry.bounds = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) }
-        // Persist to meta.json
+        repositionPortals(dimWin)
         const metaPath = path.join(dimWin.currentScene.path, 'meta.json')
         fs.writeFileSync(metaPath, JSON.stringify(dimWin.currentScene.meta, null, 2), 'utf-8')
         break

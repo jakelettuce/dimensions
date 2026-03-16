@@ -19,6 +19,7 @@ const ALLOWED_SDK_CHANNELS = new Set([
   'sdk:editing:getBounds',
   'sdk:editing:select',
   'sdk:widget:bounds-update',
+  'sdk:widget:bounds-live',
   'sdk:widget:select',
   'sdk:emit',
   'sdk:navigate:to',
@@ -38,6 +39,7 @@ const FIRE_AND_FORGET = new Set([
   'sdk:navigate:back',
   'sdk:navigate:forward',
   'sdk:widget:bounds-update',
+  'sdk:widget:bounds-live',
   'sdk:widget:select',
 ])
 
