@@ -1,6 +1,11 @@
 import type { CapabilityModule, CapabilityContext } from './index'
 import { assertCapability } from './index'
 import { persistDb } from '../database'
+import { resolveRoute } from '../protocol'
+import { loadSceneIntoWindow } from '../window-manager'
+
+// Per-window navigation state: index into history for back/forward
+const windowNavIndex = new Map<string, number>()
 
 export const navigateCapability: CapabilityModule = {
   name: 'navigate',
@@ -32,13 +37,11 @@ export const navigateCapability: CapabilityModule = {
         persistDb()
       }
 
-      // Route through the window manager's navigate handler
-      const { resolveRoute } = require('../protocol')
-      const { loadSceneIntoWindow } = require('../window-manager')
       const route = resolveRoute(url)
-
       if (route.type === 'scene') {
         loadSceneIntoWindow(dimWin, route.scenePath, route.dimensionId)
+        // Reset nav index to head of history
+        windowNavIndex.set(dimWin.id, 0)
         return null
       }
 
@@ -58,16 +61,48 @@ export const navigateCapability: CapabilityModule = {
         return { error: 'capability_denied', capability: 'navigate', widgetId }
       }
 
-      // Get previous scene from history
+      const dimWin = ctx.getWindow(widgetId)
+      if (!dimWin || dimWin.browserWindow.isDestroyed()) return { error: 'window_not_found' }
+
+      // Record current scene before going back
+      const currentScene = ctx.getScene(widgetId)
+      if (currentScene) {
+        ctx.db.run(
+          'INSERT INTO history (scene_id, timestamp) VALUES (?, ?)',
+          [currentScene.id, Date.now()],
+        )
+        persistDb()
+      }
+
+      // Get current offset, increase by 1 to go further back
+      const currentOffset = windowNavIndex.get(dimWin.id) ?? 0
+      const nextOffset = currentOffset + 1
+
+      // Query history: skip the entries we've gone back through, get the next one
       const result = ctx.db.exec(
-        'SELECT scene_id FROM history ORDER BY id DESC LIMIT 1 OFFSET 1',
+        'SELECT scene_id FROM history ORDER BY id DESC LIMIT 1 OFFSET ?',
+        [nextOffset],
       )
 
       if (result.length === 0 || result[0].values.length === 0) {
         return { error: 'no_history' }
       }
 
-      // TODO: resolve scene_id back to path and load it
+      const sceneId = result[0].values[0][0] as string
+
+      // Resolve scene_id to path via scenes table
+      const sceneResult = ctx.db.exec(
+        'SELECT path FROM scenes WHERE id = ?',
+        [sceneId],
+      )
+
+      if (sceneResult.length === 0 || sceneResult[0].values.length === 0) {
+        return { error: 'scene_not_in_index', sceneId }
+      }
+
+      const scenePath = sceneResult[0].values[0][0] as string
+      windowNavIndex.set(dimWin.id, nextOffset)
+      loadSceneIntoWindow(dimWin, scenePath)
       return null
     })
 
@@ -84,7 +119,38 @@ export const navigateCapability: CapabilityModule = {
         return { error: 'capability_denied', capability: 'navigate', widgetId }
       }
 
-      // TODO: implement forward navigation
+      const dimWin = ctx.getWindow(widgetId)
+      if (!dimWin || dimWin.browserWindow.isDestroyed()) return { error: 'window_not_found' }
+
+      const currentOffset = windowNavIndex.get(dimWin.id) ?? 0
+      if (currentOffset <= 0) {
+        return { error: 'no_forward_history' }
+      }
+
+      const nextOffset = currentOffset - 1
+
+      const result = ctx.db.exec(
+        'SELECT scene_id FROM history ORDER BY id DESC LIMIT 1 OFFSET ?',
+        [nextOffset],
+      )
+
+      if (result.length === 0 || result[0].values.length === 0) {
+        return { error: 'no_forward_history' }
+      }
+
+      const sceneId = result[0].values[0][0] as string
+      const sceneResult = ctx.db.exec(
+        'SELECT path FROM scenes WHERE id = ?',
+        [sceneId],
+      )
+
+      if (sceneResult.length === 0 || sceneResult[0].values.length === 0) {
+        return { error: 'scene_not_in_index', sceneId }
+      }
+
+      const scenePath = sceneResult[0].values[0][0] as string
+      windowNavIndex.set(dimWin.id, nextOffset)
+      loadSceneIntoWindow(dimWin, scenePath)
       return null
     })
   },

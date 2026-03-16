@@ -2,6 +2,8 @@ import type { CapabilityModule, CapabilityContext } from './index'
 import { assertCapability } from './index'
 import { persistDb } from '../database'
 
+const KV_MAX_VALUE_BYTES = 10 * 1024 * 1024 // 10MB
+
 export const kvCapability: CapabilityModule = {
   name: 'kv',
   register(ctx: CapabilityContext) {
@@ -43,6 +45,10 @@ export const kvCapability: CapabilityModule = {
       if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
       if (typeof key !== 'string') return { error: 'invalid_key' }
       if (typeof jsonValue !== 'string') return { error: 'invalid_value' }
+
+      if (jsonValue.length > KV_MAX_VALUE_BYTES) {
+        return { error: 'value_too_large', maxBytes: KV_MAX_VALUE_BYTES }
+      }
 
       const widget = ctx.getWidget(widgetId)
       if (!widget) return { error: 'widget_not_found', widgetId }

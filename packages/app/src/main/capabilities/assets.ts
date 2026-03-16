@@ -5,6 +5,8 @@ import { assertCapability } from './index'
 import { DIMENSIONS_DIR } from '../constants'
 import { assertPathWithin } from '../ipc-safety'
 
+const ASSETS_MAX_FILE_BYTES = 500 * 1024 * 1024 // 500MB
+
 export const assetsCapability: CapabilityModule = {
   name: 'assets',
   register(ctx: CapabilityContext) {
@@ -41,6 +43,11 @@ export const assetsCapability: CapabilityModule = {
       }
 
       const buffer = Buffer.from(base64, 'base64')
+
+      if (buffer.length > ASSETS_MAX_FILE_BYTES) {
+        return { error: 'file_too_large', maxBytes: ASSETS_MAX_FILE_BYTES }
+      }
+
       fs.writeFileSync(assetPath, buffer)
 
       const relPath = path.relative(DIMENSIONS_DIR, assetPath).split(path.sep).join('/')
@@ -59,6 +66,24 @@ export const assetsCapability: CapabilityModule = {
         assertCapability(widget, 'assets')
       } catch {
         return { error: 'capability_denied', capability: 'assets', widgetId }
+      }
+
+      // Validate URL format
+      if (!assetUrl.startsWith('dimensions-asset://')) {
+        return { error: 'invalid_asset_url', expected: 'dimensions-asset://' }
+      }
+
+      // Validate underlying file exists
+      try {
+        const urlObj = new URL(assetUrl)
+        const relativePath = decodeURIComponent(urlObj.hostname + urlObj.pathname)
+        const resolvedPath = path.resolve(DIMENSIONS_DIR, relativePath)
+        assertPathWithin(resolvedPath, DIMENSIONS_DIR)
+        if (!fs.existsSync(resolvedPath)) {
+          return { error: 'asset_not_found', url: assetUrl }
+        }
+      } catch {
+        return { error: 'invalid_asset_url', url: assetUrl }
       }
 
       return assetUrl
