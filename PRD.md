@@ -19,9 +19,9 @@ V1 is single-player: you build and use your own scenes on your own machine. Shar
 A folder on disk. Contains all widgets, metadata, assets, and wiring for one workspace. Scenes are the unit of navigation — every screen is a scene.
 
 ```
-~/Dimensions/scenes/
+~/Dimensions/
   home/
-    meta.json                 # layout, theme, widget positions
+    meta.json                 # layout, theme, widget instances
     connections.json           # dataflow wiring between widgets
     CLAUDE.md                  # auto-generated, Claude Code reads this
     widgets/
@@ -106,6 +106,8 @@ User content (prefixed with /go/):
 ```
 
 The `/go/` prefix cleanly separates user-created content from application routes. App routes are reserved and cannot be used as scene/dimension slugs. Widgets and scenes link to each other with these URLs. The app intercepts navigation and routes it.
+
+A separate `dimensions-asset://` protocol handles static file serving (images, widget bundles, media). It is read-only with path traversal protection. Separating navigation from file serving provides clean security boundaries — a bug in one can't escalate through the other. In V2 multiplayer, the asset resolver switches from local filesystem to CDN without changing widget code.
 
 ---
 
@@ -601,6 +603,10 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 | `electron-vite` | Dev/build pipeline |
 | `electron-builder` | Installer packaging |
 | `react` + `typescript` | Renderer UI |
+| `tailwindcss` | Utility-first CSS (all theming via CSS custom properties) |
+| `@radix-ui/*` | Unstyled accessible UI primitives |
+| `framer-motion` | Animations (command palette, transitions) |
+| `tinykeys` | Keyboard shortcut registration |
 | `@monaco-editor/react` | Files mode editor |
 | `node-pty` + `xterm.js` | Terminal |
 | `sql.js` | SQLite via WASM (no native modules) |
@@ -609,7 +615,7 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 | `zod` | Schema validation |
 | `zustand` | Renderer state |
 | `ulid` | ID generation |
-| `keytar` / `safeStorage` | OS keychain access |
+| `safeStorage` | OS-level encryption for secrets |
 
 ---
 
@@ -633,6 +639,8 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 - `dimensions://` protocol (local)
 - `Cmd+K` command palette
 - CLAUDE.md auto-generation
+- Dimensions (scene grouping with shared config and ordered flows)
+
 ### Out (V2+)
 - Packaged distribution (DMG, NSIS, Homebrew, winget, auto-updates)
 - User accounts / authentication
