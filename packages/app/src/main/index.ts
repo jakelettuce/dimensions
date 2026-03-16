@@ -1,3 +1,7 @@
+// fix-path MUST run before anything else — patches process.env.PATH for GUI-launched Electron
+import fixPath from 'fix-path'
+fixPath()
+
 import { app, BrowserWindow, ipcMain } from 'electron'
 import fs from 'fs'
 import path from 'path'

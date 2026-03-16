@@ -7,7 +7,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "postinstall": "electron-rebuild -m ../../"
+    "postinstall": "electron-rebuild -m ../../ && chmod +x ./node_modules/node-pty/build/Release/spawn-helper 2>/dev/null || true"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
@@ -22,6 +22,7 @@
     "chokidar": "^5.0.0",
     "clsx": "^2.1.1",
     "esbuild": "^0.27.4",
+    "fix-path": "^5.0.0",
     "framer-motion": "^12.36.0",
     "lucide-react": "^0.577.0",
     "node-pty": "^1.1.0",
