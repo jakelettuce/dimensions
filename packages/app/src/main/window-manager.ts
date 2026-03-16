@@ -320,6 +320,18 @@ function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
   }
 }
 
+// ── Scene cleanup ──
+
+export function cleanupPortalsForWindow(dimWin: DimensionsWindow): void {
+  for (const [, wcv] of dimWin.portalWCVs) {
+    cleanupWCV(wcv)
+    if (!dimWin.browserWindow.isDestroyed()) {
+      dimWin.browserWindow.contentView.removeChildView(wcv)
+    }
+  }
+  dimWin.portalWCVs.clear()
+}
+
 // ── Edit mode ──
 
 export function toggleEditMode(dimWin: DimensionsWindow): boolean {
@@ -370,6 +382,10 @@ export function registerWindowIpcHandlers(): void {
     const route = resolveRoute(url)
 
     if (route.type === 'scene') {
+      // Clean up old scene resources before loading new one
+      destroyTerminalsForWindow(dimWin.id)
+      cleanupPortalsForWindow(dimWin)
+
       loadSceneIntoWindow(dimWin, route.scenePath, route.dimensionId)
       return { success: true }
     }

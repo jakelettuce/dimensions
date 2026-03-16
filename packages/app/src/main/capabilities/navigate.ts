@@ -2,7 +2,8 @@ import type { CapabilityModule, CapabilityContext } from './index'
 import { assertCapability } from './index'
 import { persistDb } from '../database'
 import { resolveRoute } from '../protocol'
-import { loadSceneIntoWindow } from '../window-manager'
+import { loadSceneIntoWindow, cleanupPortalsForWindow } from '../window-manager'
+import { destroyTerminalsForWindow } from '../terminal'
 
 // Per-window navigation state: index into history for back/forward
 const windowNavIndex = new Map<string, number>()
@@ -39,8 +40,11 @@ export const navigateCapability: CapabilityModule = {
 
       const route = resolveRoute(url)
       if (route.type === 'scene') {
+        // Clean up old scene resources
+        destroyTerminalsForWindow(dimWin.id)
+        cleanupPortalsForWindow(dimWin)
+
         loadSceneIntoWindow(dimWin, route.scenePath, route.dimensionId)
-        // Reset nav index to head of history
         windowNavIndex.set(dimWin.id, 0)
         return null
       }
@@ -101,6 +105,8 @@ export const navigateCapability: CapabilityModule = {
       }
 
       const scenePath = sceneResult[0].values[0][0] as string
+      destroyTerminalsForWindow(dimWin.id)
+      cleanupPortalsForWindow(dimWin)
       windowNavIndex.set(dimWin.id, nextOffset)
       loadSceneIntoWindow(dimWin, scenePath)
       return null
@@ -149,6 +155,8 @@ export const navigateCapability: CapabilityModule = {
       }
 
       const scenePath = sceneResult[0].values[0][0] as string
+      destroyTerminalsForWindow(dimWin.id)
+      cleanupPortalsForWindow(dimWin)
       windowNavIndex.set(dimWin.id, nextOffset)
       loadSceneIntoWindow(dimWin, scenePath)
       return null
