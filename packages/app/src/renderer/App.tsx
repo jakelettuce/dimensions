@@ -10,9 +10,8 @@ export default function App() {
   const { editMode, setEditMode, setCurrentScene, selectWidget, setBuildStatus } =
     useAppStore()
 
-  // Wire up IPC listeners from main process (global shortcuts + events)
   useEffect(() => {
-    // Edit mode changes
+    // Edit mode
     window.dimensions.onEditModeChange((editing) => {
       setEditMode(editing)
     })
@@ -26,16 +25,14 @@ export default function App() {
       setTimeout(() => setBuildStatus(''), 4000)
     })
 
-    // Widget selection from scene WCV
+    // Widget selection
     window.dimensions.onWidgetSelect((widgetId) => {
       selectWidget(widgetId)
     })
 
-    // Global shortcut messages from main process
-    window.dimensions.onTogglePalette(() => {
-      const store = useAppStore.getState()
-      if (store.paletteOpen) store.closePalette()
-      else store.openPalette()
+    // Cmd+K: main process hides WCV then sends open-palette
+    window.dimensions.onOpenPalette(() => {
+      useAppStore.getState().openPalette()
     })
 
     window.dimensions.onSetEditorTool((tool) => {
@@ -61,7 +58,7 @@ export default function App() {
       useAppStore.getState().setEditorTool('claude')
     })
 
-    // Load initial scene info
+    // Load initial scene
     window.dimensions.getCurrentScene().then((scene) => {
       if (scene) setCurrentScene(scene)
     })
@@ -69,33 +66,15 @@ export default function App() {
 
   return (
     <div className={cn('flex h-full flex-col')}>
-      {/* Top bar — always visible in edit mode */}
       {editMode && <TopBar />}
 
-      {/* Main content area */}
       <div className="flex flex-1 min-h-0">
-        {/* Content area — scene WCV is positioned here by the main process */}
         <div className="flex-1 relative">
-          {/* Build status toast */}
           <BuildStatusToast />
-
-          {/* In use mode, scene fills the window (WCV bounds set by main process) */}
-          {/* In edit mode, scene WCV is shrunk to make room for top bar + editor panel */}
-          {!editMode && (
-            <div className={cn(
-              'absolute inset-0 flex items-center justify-center',
-              'bg-[var(--color-bg-primary)] pointer-events-none',
-            )}>
-              {/* Placeholder shown while scene WCV loads on top */}
-            </div>
-          )}
         </div>
-
-        {/* Editor tools panel — right sidebar, only in edit mode */}
         {editMode && <EditorToolsPanel />}
       </div>
 
-      {/* Command palette overlay */}
       <CommandPalette />
     </div>
   )

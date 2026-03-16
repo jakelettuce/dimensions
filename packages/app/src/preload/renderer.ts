@@ -29,7 +29,7 @@ const RECEIVE_CHANNELS = new Set([
   'app:navigate',
   'widget:build-status',
   'widget:select',
-  'toggle-palette',
+  'open-palette',
   'set-editor-tool',
   'navigate-back',
   'navigate-forward',
@@ -109,8 +109,8 @@ contextBridge.exposeInMainWorld('dimensions', {
   },
 
   // Global shortcut messages from main process
-  onTogglePalette: (cb: () => void) => {
-    ipcRenderer.on('toggle-palette', () => cb())
+  onOpenPalette: (cb: () => void) => {
+    ipcRenderer.on('open-palette', () => cb())
   },
   onSetEditorTool: (cb: (tool: string) => void) => {
     ipcRenderer.on('set-editor-tool', (_e, tool) => cb(tool))

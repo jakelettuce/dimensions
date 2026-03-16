@@ -27,7 +27,7 @@ declare global {
       onTerminalOutput: (id: string, cb: (data: string) => void) => void
       removeTerminalOutputListener: (id: string) => void
       // Global shortcut messages from main process
-      onTogglePalette: (cb: () => void) => void
+      onOpenPalette: (cb: () => void) => void
       onSetEditorTool: (cb: (tool: string) => void) => void
       onNavigateBack: (cb: () => void) => void
       onNavigateForward: (cb: () => void) => void

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
-import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
+import { cn } from '@/lib/utils'
 import { Search } from 'lucide-react'
 
 export function CommandPalette() {
@@ -9,17 +9,15 @@ export function CommandPalette() {
 
   const handleClose = useCallback(() => {
     closePalette()
-    // Notify main process to restore scene WCV visibility
     window.dimensions.paletteClose()
   }, [closePalette])
 
   useEffect(() => {
     if (paletteOpen && inputRef.current) {
-      inputRef.current.focus()
+      setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [paletteOpen])
 
-  // Close on Escape
   useEffect(() => {
     if (!paletteOpen) return
     const handler = (e: KeyboardEvent) => {
@@ -33,24 +31,32 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
+      className={cn(
+        'fixed inset-0 z-50 flex items-start justify-center',
+        'pt-[15vh]',
+      )}
       onClick={handleClose}
     >
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50" />
+      <div className="fixed inset-0 bg-black/60" />
 
-      {/* Palette */}
+      {/* Palette card */}
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'relative z-10 rounded-[var(--radius-xl)] overflow-hidden',
-          'w-[var(--palette-width)] max-h-[400px]',
+          'relative z-10 w-[560px] max-h-[400px] overflow-hidden',
+          'rounded-[var(--radius-xl)]',
           'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
           'shadow-[var(--shadow-lg)]',
         )}
       >
         {/* Search input */}
-        <div className="flex items-center gap-[var(--space-md)] px-[var(--space-lg)] border-b border-[var(--color-border)]">
+        <div
+          className={cn(
+            'flex items-center gap-[var(--space-md)] px-[var(--space-lg)]',
+            'border-b border-[var(--color-border)]',
+          )}
+        >
           <Search size={16} className="text-[var(--color-text-muted)] shrink-0" />
           <input
             ref={inputRef}
@@ -64,10 +70,10 @@ export function CommandPalette() {
           />
         </div>
 
-        {/* Results placeholder */}
-        <div className="p-[var(--space-md)]">
-          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] text-center py-[var(--space-lg)]">
-            Command palette — full implementation in Phase 6
+        {/* Results — full implementation in Phase 6 */}
+        <div className="p-[var(--space-lg)]">
+          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] text-center py-[var(--space-xl)]">
+            Type to search scenes and actions...
           </p>
         </div>
       </div>

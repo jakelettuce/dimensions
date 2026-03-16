@@ -1,34 +1,38 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron'
 import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, type DimensionsWindow } from './window-manager'
 
-// Track palette-open state per window to toggle scene WCV visibility
-const paletteOpen = new Map<string, boolean>()
-
 function getFocusedDimWin() {
   const focused = BrowserWindow.getFocusedWindow()
   if (!focused) return null
   return findWindowByBrowserWindow(focused)
 }
 
-// WCVs are native layers that sit above the renderer. When the command palette
-// (rendered in React) needs to be visible, we must hide the scene WCV.
-function toggleSceneWCVVisibility(dimWin: DimensionsWindow): void {
-  const isOpen = paletteOpen.get(dimWin.id) ?? false
-  paletteOpen.set(dimWin.id, !isOpen)
+// WCVs are native layers above the renderer. To show renderer-drawn overlays
+// (command palette), we must remove the WCV from the view tree, then re-add it.
+const savedBounds = new Map<string, { x: number; y: number; width: number; height: number }>()
 
-  if (!isOpen) {
-    // Palette opening — hide scene WCV
-    dimWin.sceneWCV.setVisible(false)
+function hideSceneWCV(dimWin: DimensionsWindow): void {
+  try {
+    savedBounds.set(dimWin.id, dimWin.sceneWCV.getBounds())
+    dimWin.browserWindow.contentView.removeChildView(dimWin.sceneWCV)
     for (const portalWcv of dimWin.portalWCVs.values()) {
-      portalWcv.setVisible(false)
+      dimWin.browserWindow.contentView.removeChildView(portalWcv)
     }
-  } else {
-    // Palette closing — show scene WCV
-    dimWin.sceneWCV.setVisible(true)
+  } catch {}
+}
+
+function showSceneWCV(dimWin: DimensionsWindow): void {
+  try {
+    dimWin.browserWindow.contentView.addChildView(dimWin.sceneWCV)
+    const bounds = savedBounds.get(dimWin.id)
+    if (bounds) {
+      dimWin.sceneWCV.setBounds(bounds)
+      savedBounds.delete(dimWin.id)
+    }
     for (const portalWcv of dimWin.portalWCVs.values()) {
-      portalWcv.setVisible(true)
+      dimWin.browserWindow.contentView.addChildView(portalWcv)
     }
-  }
+  } catch {}
 }
 
 export function registerGlobalShortcuts(): void {
@@ -38,13 +42,13 @@ export function registerGlobalShortcuts(): void {
     if (dimWin) toggleEditMode(dimWin)
   })
 
-  // Cmd+K: Toggle command palette
-  // Must hide scene WCV so the renderer-drawn palette is visible (WCVs are native layers above the renderer)
+  // Cmd+K: Open command palette — hide WCV, tell renderer
   globalShortcut.register('CommandOrControl+K', () => {
     const dimWin = getFocusedDimWin()
     if (!dimWin) return
-    dimWin.browserWindow.webContents.send('toggle-palette')
-    toggleSceneWCVVisibility(dimWin)
+    // Always hide WCV and tell renderer to open palette
+    hideSceneWCV(dimWin)
+    dimWin.browserWindow.webContents.send('open-palette')
   })
 
   // Cmd+1: Claude Code terminal tab
@@ -86,10 +90,7 @@ export function registerGlobalShortcuts(): void {
   globalShortcut.register('CommandOrControl+`', () => {
     const dimWin = getFocusedDimWin()
     if (!dimWin) return
-    // If not in edit mode, enter it first
-    if (!dimWin.editMode) {
-      toggleEditMode(dimWin)
-    }
+    if (!dimWin.editMode) toggleEditMode(dimWin)
     dimWin.browserWindow.webContents.send('set-editor-tool', 'claude')
     dimWin.browserWindow.webContents.send('focus-terminal')
   })
@@ -98,11 +99,7 @@ export function registerGlobalShortcuts(): void {
   ipcMain.handle('palette-close', (event) => {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
-    paletteOpen.set(dimWin.id, false)
-    dimWin.sceneWCV.setVisible(true)
-    for (const portalWcv of dimWin.portalWCVs.values()) {
-      portalWcv.setVisible(true)
-    }
+    showSceneWCV(dimWin)
   })
 }
 
