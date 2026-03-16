@@ -300,6 +300,38 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
           }))
         }
       },
+
+      // meta.json or connections.json changed — reload entire scene
+      onSceneMetaChanged: () => {
+        if (dimWin.browserWindow.isDestroyed()) return
+        try {
+          const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
+          dimWin.currentScene = updatedScene
+
+          const html = generateSceneHtml(updatedScene)
+          const htmlPath = writeSceneHtml(scenePath, html)
+          const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
+          const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+
+          dimWin.sceneWCV.webContents.loadURL(sceneUrl)
+          generateClaudeMd(updatedScene)
+
+          // Notify renderer of updated scene
+          if (!dimWin.browserWindow.isDestroyed()) {
+            dimWin.browserWindow.webContents.send('scene-updated', sanitizeIpcData({
+              id: updatedScene.id,
+              slug: updatedScene.slug,
+              title: updatedScene.meta.title,
+              path: updatedScene.path,
+              dimensionId: updatedScene.dimensionId,
+              widgets: updatedScene.meta.widgets,
+              theme: updatedScene.meta.theme,
+            }))
+          }
+        } catch (e) {
+          console.error('Failed to reload scene after meta change:', e)
+        }
+      },
     })
   } catch (err) {
     console.error(`Failed to load scene at ${scenePath}:`, err)

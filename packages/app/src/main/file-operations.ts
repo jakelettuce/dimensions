@@ -4,6 +4,10 @@ import path from 'path'
 import { DIMENSIONS_DIR } from './constants'
 import { assertPathWithin } from './ipc-safety'
 import { findWindowByWebContentsId } from './window-manager'
+import { buildWidget, resolveWidgetSrcDir, resolveWidgetId } from './builder'
+import { generateClaudeMd } from './claude-md'
+import { loadSceneFromDisk } from './scene-manager'
+import { sanitizeIpcData } from './ipc-safety'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
@@ -143,6 +147,36 @@ export function registerFileOperationHandlers(): void {
       }
 
       fs.writeFileSync(resolved, content, 'utf-8')
+
+      // Explicitly trigger widget build if the file is in a widget src/ directory
+      // Don't rely on chokidar — direct builds are more reliable for editor saves
+      const widgetSrcDir = resolveWidgetSrcDir(resolved)
+      if (widgetSrcDir) {
+        buildWidget(widgetSrcDir).then((result) => {
+          const widgetTypeId = resolveWidgetId(widgetSrcDir)
+          if (widgetTypeId && dimWin.currentScene && !dimWin.browserWindow.isDestroyed()) {
+            // Reload all instances of this widget type
+            for (const entry of dimWin.currentScene.meta.widgets) {
+              if (entry.widgetType === widgetTypeId) {
+                dimWin.sceneWCV.webContents.send('scene:widget-reload', entry.id)
+              }
+            }
+            // Update scene state and CLAUDE.md
+            const scenePath = dimWin.currentScene.path
+            const dimensionId = dimWin.currentScene.dimensionId
+            dimWin.currentScene = loadSceneFromDisk(scenePath, dimensionId)
+            generateClaudeMd(dimWin.currentScene)
+
+            // Notify renderer of build status
+            dimWin.browserWindow.webContents.send('widget:build-status', sanitizeIpcData({
+              widgetId: widgetTypeId,
+              success: result.success,
+              error: result.error,
+            }))
+          }
+        }).catch(() => {})
+      }
+
       return { success: true }
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) }

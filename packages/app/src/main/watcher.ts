@@ -4,28 +4,29 @@ import { buildWidget, resolveWidgetSrcDir, resolveWidgetId } from './builder'
 
 export interface WatcherCallbacks {
   onWidgetBuilt: (widgetId: string, success: boolean, error?: string) => void
+  onSceneMetaChanged?: () => void
 }
 
-// Module state packed in an object to avoid bundler issues with top-level let assignments
 const watcherState: {
   watcher: FSWatcher | null
+  metaWatcher: FSWatcher | null
   scenePath: string | null
   buildingWidgets: Set<string>
 } = {
   watcher: null,
+  metaWatcher: null,
   scenePath: null,
   buildingWidgets: new Set(),
 }
 
-// Start watching a scene's widget source directories for changes.
-// On change: build widget, then notify callback.
+// Watch a scene's widget sources AND meta.json/connections.json for changes.
 export function watchScene(scenePath: string, callbacks: WatcherCallbacks): void {
-  // Stop any previous watcher
   stopWatching()
 
   watcherState.scenePath = scenePath
   const widgetsDir = path.join(scenePath, 'widgets')
 
+  // Watch widget source files
   watcherState.watcher = chokidar.watch(widgetsDir, {
     ignoreInitial: true,
     awaitWriteFinish: {
@@ -61,12 +62,34 @@ export function watchScene(scenePath: string, callbacks: WatcherCallbacks): void
 
   watcherState.watcher.on('change', handleChange)
   watcherState.watcher.on('add', handleChange)
+
+  // Watch meta.json and connections.json for scene-level changes
+  const metaPath = path.join(scenePath, 'meta.json')
+  const connectionsPath = path.join(scenePath, 'connections.json')
+
+  watcherState.metaWatcher = chokidar.watch([metaPath, connectionsPath], {
+    ignoreInitial: true,
+    awaitWriteFinish: {
+      stabilityThreshold: 200,
+      pollInterval: 50,
+    },
+  })
+
+  watcherState.metaWatcher.on('change', () => {
+    if (callbacks.onSceneMetaChanged) {
+      callbacks.onSceneMetaChanged()
+    }
+  })
 }
 
 export function stopWatching(): void {
   if (watcherState.watcher) {
     watcherState.watcher.close()
     watcherState.watcher = null
+  }
+  if (watcherState.metaWatcher) {
+    watcherState.metaWatcher.close()
+    watcherState.metaWatcher = null
   }
   watcherState.scenePath = null
   watcherState.buildingWidgets.clear()

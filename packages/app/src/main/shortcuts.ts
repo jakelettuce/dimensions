@@ -1,6 +1,9 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron'
+import path from 'path'
 import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, type DimensionsWindow } from './window-manager'
-import { getPortal } from './webportal-manager'
+import { loadSceneFromDisk, generateSceneHtml, writeSceneHtml } from './scene-manager'
+import { getPortal, mountAllWebportals, repositionPortals } from './webportal-manager'
+import { DIMENSIONS_DIR } from './constants'
 
 function getFocusedDimWin() {
   const focused = BrowserWindow.getFocusedWindow()
@@ -131,7 +134,25 @@ export function registerGlobalShortcuts(): void {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
     if (visible) {
-      showAllWCVs(dimWin)
+      // Switching back to Live view — reload scene to pick up any edits made in Files view
+      if (dimWin.currentScene) {
+        const scenePath = dimWin.currentScene.path
+        const dimensionId = dimWin.currentScene.dimensionId
+        const updatedScene = loadSceneFromDisk(scenePath, dimensionId)
+        dimWin.currentScene = updatedScene
+
+        const html = generateSceneHtml(updatedScene)
+        const htmlPath = writeSceneHtml(scenePath, html)
+        const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
+        const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+
+        showAllWCVs(dimWin)
+        dimWin.sceneWCV.webContents.loadURL(sceneUrl)
+        // Remount portals with updated bounds
+        mountAllWebportals(dimWin)
+      } else {
+        showAllWCVs(dimWin)
+      }
     } else {
       hideAllWCVs(dimWin)
     }
