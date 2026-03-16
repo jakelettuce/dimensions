@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
 import { TopBar } from '@/components/top-bar/TopBar'
 import { EditorToolsPanel } from '@/components/editor-tools/EditorToolsPanel'
+import { ContentArea } from '@/components/content-area/ContentArea'
 import { CommandPalette } from '@/components/command-palette/CommandPalette'
 import '@xterm/xterm/css/xterm.css'
 
@@ -70,6 +71,7 @@ export default function App() {
 
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 relative">
+          <ContentArea />
           <BuildStatusToast />
         </div>
         {editMode && <EditorToolsPanel />}

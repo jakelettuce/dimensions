@@ -8,6 +8,63 @@ import { findWindowByWebContentsId } from './window-manager'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 export function registerFileOperationHandlers(): void {
+  // ── list-scenes (scan ~/Dimensions/ for folders with meta.json) ──
+  ipcMain.handle('list-scenes', () => {
+    try {
+      if (!fs.existsSync(DIMENSIONS_DIR)) return []
+      const entries = fs.readdirSync(DIMENSIONS_DIR, { withFileTypes: true })
+      const scenes: Array<{ id: string; slug: string; title: string; path: string }> = []
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        if (entry.name.startsWith('.')) continue
+        const metaPath = path.join(DIMENSIONS_DIR, entry.name, 'meta.json')
+        if (!fs.existsSync(metaPath)) continue
+        try {
+          const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+          scenes.push({
+            id: raw.id || entry.name,
+            slug: raw.slug || entry.name,
+            title: raw.title || entry.name,
+            path: path.join(DIMENSIONS_DIR, entry.name),
+          })
+        } catch {}
+      }
+
+      return scenes
+    } catch {
+      return []
+    }
+  })
+
+  // ── list-dimensions (scan for folders with dimension.json) ──
+  ipcMain.handle('list-dimensions', () => {
+    try {
+      if (!fs.existsSync(DIMENSIONS_DIR)) return []
+      const entries = fs.readdirSync(DIMENSIONS_DIR, { withFileTypes: true })
+      const dimensions: Array<{ id: string; title: string; scenes: string[] }> = []
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        if (entry.name.startsWith('.')) continue
+        const dimPath = path.join(DIMENSIONS_DIR, entry.name, 'dimension.json')
+        if (!fs.existsSync(dimPath)) continue
+        try {
+          const raw = JSON.parse(fs.readFileSync(dimPath, 'utf-8'))
+          dimensions.push({
+            id: raw.id || entry.name,
+            title: raw.title || entry.name,
+            scenes: raw.scenes || [],
+          })
+        } catch {}
+      }
+
+      return dimensions
+    } catch {
+      return []
+    }
+  })
+
   // ── read-dir ──
   ipcMain.handle('read-dir', (_event, dirPath: unknown) => {
     try {
