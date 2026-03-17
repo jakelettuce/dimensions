@@ -41,7 +41,7 @@ import type { DimensionsWindow } from './window-manager'
 import { registerCapabilities } from './capabilities/index'
 import { registerTerminalIpcHandlers } from './terminal'
 import { registerPortalIpcHandlers, repositionPortals } from './webportal-manager'
-import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './shortcuts'
+import { registerShortcuts, unregisterGlobalShortcuts } from './shortcuts'
 import { registerFileOperationHandlers } from './file-operations'
 import { HOME_SCENE_DIR } from './constants'
 import { sanitizeIpcData } from './ipc-safety'
@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
   registerTerminalIpcHandlers()
   registerPortalIpcHandlers()
   registerFileOperationHandlers()
-  registerGlobalShortcuts(db)
+  registerShortcuts(db)
 
   // Register capability system
   registerCapabilities(

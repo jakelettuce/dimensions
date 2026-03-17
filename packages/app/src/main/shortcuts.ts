@@ -1,4 +1,4 @@
-import { globalShortcut, BrowserWindow, ipcMain } from 'electron'
+import { Menu, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, createWindow, updateSceneWCVBounds, type DimensionsWindow } from './window-manager'
 import type { Database } from 'sql.js'
@@ -23,9 +23,7 @@ function getAllPortalWCVs(dimWin: DimensionsWindow): Electron.WebContentsView[] 
   for (const entry of dimWin.currentScene.meta.widgets) {
     const portal = getPortal(entry.id)
     if (!portal) continue
-    // Chrome WCV
     wcvs.push(portal.chromeWCV)
-    // All tab content WCVs
     for (const [, tab] of portal.tabs) {
       wcvs.push(tab.contentWCV)
     }
@@ -38,7 +36,6 @@ function hideAllWCVs(dimWin: DimensionsWindow): void {
     savedBounds.set(dimWin.id, dimWin.sceneWCV.getBounds())
     dimWin.browserWindow.contentView.removeChildView(dimWin.sceneWCV)
 
-    // Remove ALL portal WCVs (chrome + every tab's content)
     for (const wcv of getAllPortalWCVs(dimWin)) {
       try { dimWin.browserWindow.contentView.removeChildView(wcv) } catch {}
     }
@@ -54,7 +51,6 @@ function showAllWCVs(dimWin: DimensionsWindow): void {
       savedBounds.delete(dimWin.id)
     }
 
-    // Re-add portal WCVs in correct z-order (content before chrome)
     if (dimWin.currentScene) {
       for (const entry of dimWin.currentScene.meta.widgets) {
         const portal = getPortal(entry.id)
@@ -69,109 +65,175 @@ function showAllWCVs(dimWin: DimensionsWindow): void {
   } catch {}
 }
 
-export function registerGlobalShortcuts(db: Database): void {
-  // Cmd+E: Toggle edit mode
-  globalShortcut.register('CommandOrControl+E', () => {
-    const dimWin = getFocusedDimWin()
-    if (dimWin) toggleEditMode(dimWin)
-  })
+// ── Shortcut handlers ──
 
-  // Cmd+K: Open command palette — hide ALL WCVs, tell renderer
-  globalShortcut.register('CommandOrControl+K', () => {
-    const dimWin = getFocusedDimWin()
-    if (!dimWin) return
-    hideAllWCVs(dimWin)
-    dimWin.browserWindow.webContents.send('open-palette')
-  })
+function handleToggleEditMode() {
+  const dimWin = getFocusedDimWin()
+  if (dimWin) toggleEditMode(dimWin)
+}
 
-  // Cmd+S: Toggle scene sidebar
-  globalShortcut.register('CommandOrControl+S', () => {
-    const dimWin = getFocusedDimWin()
-    if (!dimWin) return
-    dimWin.sceneSidebarOpen = !dimWin.sceneSidebarOpen
-    updateSceneWCVBounds(dimWin)
-    dimWin.browserWindow.webContents.send('scene-sidebar', dimWin.sceneSidebarOpen)
-  })
+function handleOpenPalette() {
+  const dimWin = getFocusedDimWin()
+  if (!dimWin) return
+  hideAllWCVs(dimWin)
+  dimWin.browserWindow.webContents.send('open-palette')
+}
 
-  // Cmd+1: Claude Code terminal tab
-  globalShortcut.register('CommandOrControl+1', () => {
-    const focused = BrowserWindow.getFocusedWindow()
-    if (!focused) return
-    focused.webContents.send('set-editor-tool', 'claude')
-  })
+function handleToggleSidebar() {
+  const dimWin = getFocusedDimWin()
+  if (!dimWin) return
+  dimWin.sceneSidebarOpen = !dimWin.sceneSidebarOpen
+  updateSceneWCVBounds(dimWin)
+  dimWin.browserWindow.webContents.send('scene-sidebar', dimWin.sceneSidebarOpen)
+}
 
-  // Cmd+[: Navigate back
-  globalShortcut.register('CommandOrControl+[', () => {
-    const focused = BrowserWindow.getFocusedWindow()
-    if (!focused) return
-    focused.webContents.send('navigate-back')
-  })
+function handleNavBack() {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused) focused.webContents.send('navigate-back')
+}
 
-  // Cmd+]: Navigate forward
-  globalShortcut.register('CommandOrControl+]', () => {
-    const focused = BrowserWindow.getFocusedWindow()
-    if (!focused) return
-    focused.webContents.send('navigate-forward')
-  })
+function handleNavForward() {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused) focused.webContents.send('navigate-forward')
+}
 
-  // Cmd+Shift+F: Toggle Live/Files view — hide/show WCVs
-  globalShortcut.register('CommandOrControl+Shift+F', () => {
-    const dimWin = getFocusedDimWin()
-    if (!dimWin) return
-    // Only works in edit mode
-    if (!dimWin.editMode) return
-    dimWin.browserWindow.webContents.send('toggle-content-view')
-  })
+function handleToggleContentView() {
+  const dimWin = getFocusedDimWin()
+  if (!dimWin || !dimWin.editMode) return
+  dimWin.browserWindow.webContents.send('toggle-content-view')
+}
 
-  // Cmd+`: Focus terminal (enter edit mode if needed)
-  globalShortcut.register('CommandOrControl+`', () => {
-    const dimWin = getFocusedDimWin()
-    if (!dimWin) return
-    if (!dimWin.editMode) toggleEditMode(dimWin)
-    dimWin.browserWindow.webContents.send('set-editor-tool', 'claude')
-    dimWin.browserWindow.webContents.send('focus-terminal')
-  })
+function handleFocusTerminal() {
+  const dimWin = getFocusedDimWin()
+  if (!dimWin) return
+  if (!dimWin.editMode) toggleEditMode(dimWin)
+  dimWin.browserWindow.webContents.send('set-editor-tool', 'claude')
+  dimWin.browserWindow.webContents.send('focus-terminal')
+}
 
-  // Cmd+N: new window
-  globalShortcut.register('CommandOrControl+N', () => {
-    createWindow(db)
-  })
+function handleTerminalTab() {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused) focused.webContents.send('set-editor-tool', 'claude')
+}
 
-  // Cmd+T: new scene — same hide as Cmd+K, then open palette in new-scene mode
-  globalShortcut.register('CommandOrControl+T', () => {
-    const dimWin = getFocusedDimWin()
-    if (!dimWin) return
-    hideAllWCVs(dimWin)
-    dimWin.browserWindow.webContents.send('open-palette')
-    dimWin.browserWindow.webContents.send('open-new-scene-prompt')
-  })
+function handleFullscreen() {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused) focused.setFullScreen(!focused.isFullScreen())
+}
 
-  // Cmd+,: open settings
-  globalShortcut.register('CommandOrControl+,', () => {
-    const dimWin = getFocusedDimWin()
-    if (!dimWin) return
-    dimWin.browserWindow.webContents.send('open-settings')
-  })
+let _db: Database | null = null
 
-  // F11: toggle fullscreen
-  globalShortcut.register('F11', () => {
-    const focused = BrowserWindow.getFocusedWindow()
-    if (focused) focused.setFullScreen(!focused.isFullScreen())
-  })
+function handleNewWindow() {
+  if (_db) createWindow(_db)
+}
 
-  // IPC: renderer signals palette closed → restore WCVs
+function handleNewScene() {
+  const dimWin = getFocusedDimWin()
+  if (!dimWin) return
+  hideAllWCVs(dimWin)
+  dimWin.browserWindow.webContents.send('open-palette')
+  dimWin.browserWindow.webContents.send('open-new-scene-prompt')
+}
+
+// ── Menu-based shortcuts (only active when app is focused) ──
+
+export function registerShortcuts(db: Database): void {
+  _db = db
+
+  const isMac = process.platform === 'darwin'
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    // App menu (macOS only)
+    ...(isMac ? [{
+      label: 'Dimensions',
+      submenu: [
+        { role: 'about' as const },
+        { type: 'separator' as const },
+        { role: 'hide' as const },
+        { role: 'hideOthers' as const },
+        { role: 'unhide' as const },
+        { type: 'separator' as const },
+        { role: 'quit' as const },
+      ],
+    }] : []),
+
+    // File
+    {
+      label: 'File',
+      submenu: [
+        { label: 'New Window', accelerator: 'CmdOrCtrl+N', click: handleNewWindow },
+        { label: 'New Scene', accelerator: 'CmdOrCtrl+T', click: handleNewScene },
+        { type: 'separator' },
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+S', click: handleToggleSidebar },
+        { type: 'separator' },
+        ...(isMac ? [{ role: 'close' as const }] : [{ role: 'quit' as const }]),
+      ],
+    },
+
+    // Edit
+    {
+      label: 'Edit',
+      submenu: [
+        { label: 'Toggle Edit Mode', accelerator: 'CmdOrCtrl+E', click: handleToggleEditMode },
+        { type: 'separator' },
+        { role: 'undo' as const },
+        { role: 'redo' as const },
+        { type: 'separator' },
+        { role: 'cut' as const },
+        { role: 'copy' as const },
+        { role: 'paste' as const },
+        { role: 'selectAll' as const },
+      ],
+    },
+
+    // View
+    {
+      label: 'View',
+      submenu: [
+        { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: handleOpenPalette },
+        { label: 'Toggle Files', accelerator: 'CmdOrCtrl+Shift+F', click: handleToggleContentView },
+        { label: 'Terminal', accelerator: 'CmdOrCtrl+`', click: handleFocusTerminal },
+        { label: 'Terminal Tab', accelerator: 'CmdOrCtrl+1', click: handleTerminalTab },
+        { type: 'separator' },
+        { label: 'Navigate Back', accelerator: 'CmdOrCtrl+[', click: handleNavBack },
+        { label: 'Navigate Forward', accelerator: 'CmdOrCtrl+]', click: handleNavForward },
+        { type: 'separator' },
+        { label: 'Toggle Fullscreen', accelerator: 'F11', click: handleFullscreen },
+        { type: 'separator' },
+        { role: 'reload' as const },
+        { role: 'toggleDevTools' as const },
+      ],
+    },
+
+    // Window
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' as const },
+        { role: 'zoom' as const },
+        ...(isMac ? [
+          { type: 'separator' as const },
+          { role: 'front' as const },
+        ] : []),
+      ],
+    },
+  ]
+
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
+
+  // ── IPC handlers (these are always available, not shortcut-dependent) ──
+
   ipcMain.handle('palette-close', (event) => {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
     showAllWCVs(dimWin)
   })
 
-  // IPC: renderer toggles files view — hide/show WCVs
   ipcMain.handle('toggle-wcv-visibility', (event, visible: unknown) => {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
     if (visible) {
-      // Switching back to Live view — reload scene to pick up any edits made in Files view
       if (dimWin.currentScene) {
         const scenePath = dimWin.currentScene.path
         const dimensionId = dimWin.currentScene.dimensionId
@@ -186,7 +248,6 @@ export function registerGlobalShortcuts(db: Database): void {
 
         showAllWCVs(dimWin)
         dimWin.sceneWCV.webContents.loadURL(sceneUrl)
-        // Re-send edit mode after scene HTML reloads so handles are visible
         dimWin.sceneWCV.webContents.once('did-finish-load', () => {
           if (dimWin.editMode && !dimWin.sceneWCV.webContents.isDestroyed()) {
             dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
@@ -203,5 +264,5 @@ export function registerGlobalShortcuts(db: Database): void {
 }
 
 export function unregisterGlobalShortcuts(): void {
-  globalShortcut.unregisterAll()
+  // No-op — menu accelerators are cleaned up automatically
 }
