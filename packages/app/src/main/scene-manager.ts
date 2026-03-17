@@ -290,8 +290,9 @@ export function generateSceneHtml(scene: SceneState): string {
 
       window.dimensionsScene.onEditMode((editing) => {
         document.body.classList.toggle('editing', editing);
+        // In edit mode, allow scrolling so widgets outside the shrunken viewport are reachable
+        document.body.style.overflow = editing ? 'auto' : 'hidden';
         if (!editing) {
-          // Remove selected state from all wrappers when leaving edit mode
           document.querySelectorAll('.widget-wrapper.selected').forEach(el => el.classList.remove('selected'));
         }
       });

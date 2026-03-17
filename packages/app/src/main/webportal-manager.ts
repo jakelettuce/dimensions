@@ -86,12 +86,26 @@ function acquireContentWCV(dimWin: DimensionsWindow): WebContentsView {
 
 function calculatePortalBounds(
   widgetBounds: Bounds,
-  sceneWCVBounds: { x: number; y: number },
+  sceneWCVBounds: { x: number; y: number; width?: number; height?: number },
 ): { chrome: Electron.Rectangle; content: Electron.Rectangle } {
   const absX = Math.round(widgetBounds.x + sceneWCVBounds.x)
   const absY = Math.round(widgetBounds.y + sceneWCVBounds.y)
-  const width = Math.round(widgetBounds.width)
-  const height = Math.round(widgetBounds.height)
+  let width = Math.round(widgetBounds.width)
+  let height = Math.round(widgetBounds.height)
+
+  // Clamp to scene WCV bounds so portals don't overflow into the editor panel
+  if (sceneWCVBounds.width != null) {
+    const maxRight = sceneWCVBounds.x + sceneWCVBounds.width
+    if (absX + width > maxRight) {
+      width = Math.max(0, maxRight - absX)
+    }
+  }
+  if (sceneWCVBounds.height != null) {
+    const maxBottom = sceneWCVBounds.y + sceneWCVBounds.height
+    if (absY + height > maxBottom) {
+      height = Math.max(0, maxBottom - absY)
+    }
+  }
 
   return {
     chrome: { x: absX, y: absY, width, height: CHROME_HEIGHT },
