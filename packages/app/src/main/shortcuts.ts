@@ -149,8 +149,8 @@ export function registerGlobalShortcuts(): void {
 
         showAllWCVs(dimWin)
         dimWin.sceneWCV.webContents.loadURL(sceneUrl)
-        // Remount portals with updated bounds
-        mountAllWebportals(dimWin)
+        // Reposition existing portals (don't remount — that destroys and recreates them)
+        repositionPortals(dimWin)
       } else {
         showAllWCVs(dimWin)
       }

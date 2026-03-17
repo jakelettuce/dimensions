@@ -233,6 +233,7 @@ export function generateSceneHtml(scene: SceneState): string {
       z-index: 10;
     }
     .drag-handle:active { cursor: grabbing; }
+    .drag-handle, .resize-handle { touch-action: none; }
     .resize-handle {
       display: none;
       position: absolute;
@@ -310,7 +311,9 @@ export function generateSceneHtml(scene: SceneState): string {
       };
     }
 
-    document.addEventListener('mousedown', function(e) {
+    // Use pointerdown + setPointerCapture so the handle keeps receiving
+    // pointermove/pointerup even when the mouse moves fast and leaves the element.
+    document.addEventListener('pointerdown', function(e) {
       if (!document.body.classList.contains('editing')) return;
 
       var target = e.target;
@@ -322,6 +325,7 @@ export function generateSceneHtml(scene: SceneState): string {
       // ── Drag handle ──
       if (target.classList.contains('drag-handle')) {
         e.preventDefault();
+        target.setPointerCapture(e.pointerId);
         document.body.classList.add('interacting');
         var startX = e.clientX;
         var startY = e.clientY;
@@ -335,20 +339,22 @@ export function generateSceneHtml(scene: SceneState): string {
           wrapper.style.top = (origTop + dy) + 'px';
           postSdk('sdk:widget:bounds-live', [widgetId, getBoundsFromWrapper(wrapper)]);
         }
-        function onUp() {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+        function onUp(ev) {
+          target.releasePointerCapture(ev.pointerId);
+          target.removeEventListener('pointermove', onMove);
+          target.removeEventListener('pointerup', onUp);
           document.body.classList.remove('interacting');
           postSdk('sdk:widget:bounds-update', [widgetId, getBoundsFromWrapper(wrapper)]);
         }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        target.addEventListener('pointermove', onMove);
+        target.addEventListener('pointerup', onUp);
         return;
       }
 
       // ── Resize handle ──
       if (target.classList.contains('resize-handle')) {
         e.preventDefault();
+        target.setPointerCapture(e.pointerId);
         document.body.classList.add('interacting');
         var startRX = e.clientX;
         var startRY = e.clientY;
@@ -362,14 +368,15 @@ export function generateSceneHtml(scene: SceneState): string {
           wrapper.style.height = Math.max(40, origH + dh) + 'px';
           postSdk('sdk:widget:bounds-live', [widgetId, getBoundsFromWrapper(wrapper)]);
         }
-        function onRUp() {
-          document.removeEventListener('mousemove', onRMove);
-          document.removeEventListener('mouseup', onRUp);
+        function onRUp(ev) {
+          target.releasePointerCapture(ev.pointerId);
+          target.removeEventListener('pointermove', onRMove);
+          target.removeEventListener('pointerup', onRUp);
           document.body.classList.remove('interacting');
           postSdk('sdk:widget:bounds-update', [widgetId, getBoundsFromWrapper(wrapper)]);
         }
-        document.addEventListener('mousemove', onRMove);
-        document.addEventListener('mouseup', onRUp);
+        target.addEventListener('pointermove', onRMove);
+        target.addEventListener('pointerup', onRUp);
         return;
       }
 

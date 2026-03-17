@@ -302,9 +302,21 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
         }
       },
 
-      // meta.json or connections.json changed — reload entire scene
+      // meta.json or connections.json changed — reload scene
+      // Skip reload in edit mode: the app itself writes meta.json on drag/resize,
+      // and reloading would wipe edit state (handles, selection, interacting class).
+      // Only reload when NOT in edit mode (e.g. Claude Code edited meta.json via terminal).
       onSceneMetaChanged: () => {
         if (dimWin.browserWindow.isDestroyed()) return
+        if (dimWin.editMode) {
+          // In edit mode: just update in-memory state without reloading scene HTML
+          try {
+            const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
+            dimWin.currentScene = updatedScene
+            generateClaudeMd(updatedScene)
+          } catch {}
+          return
+        }
         try {
           const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
           dimWin.currentScene = updatedScene
@@ -317,7 +329,6 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
           dimWin.sceneWCV.webContents.loadURL(sceneUrl)
           generateClaudeMd(updatedScene)
 
-          // Notify renderer of updated scene
           if (!dimWin.browserWindow.isDestroyed()) {
             dimWin.browserWindow.webContents.send('scene-updated', sanitizeIpcData({
               id: updatedScene.id,
