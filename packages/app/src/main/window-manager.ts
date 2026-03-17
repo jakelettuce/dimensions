@@ -348,6 +348,21 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
   } catch (err) {
     console.error(`Failed to load scene at ${scenePath}:`, err)
   }
+
+  // Notify renderer of scene change (breadcrumbs, title, etc.)
+  if (dimWin.currentScene && !dimWin.browserWindow.isDestroyed()) {
+    dimWin.browserWindow.webContents.send('scene-changed', sanitizeIpcData({
+      id: dimWin.currentScene.id,
+      slug: dimWin.currentScene.slug,
+      title: dimWin.currentScene.meta.title,
+      path: dimWin.currentScene.path,
+      dimensionId: dimWin.currentScene.dimensionId,
+      widgets: dimWin.currentScene.meta.widgets,
+      theme: dimWin.currentScene.meta.theme,
+      dimensionTitle: dimWin.currentScene.dimensionMeta?.title ?? null,
+      dimensionScenes: dimWin.currentScene.dimensionMeta?.scenes ?? null,
+    }))
+  }
 }
 
 // ── WCV bounds management ──

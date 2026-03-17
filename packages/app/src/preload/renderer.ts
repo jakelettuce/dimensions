@@ -40,6 +40,7 @@ const RECEIVE_CHANNELS = new Set([
   'focus-terminal',
   'open-new-scene-prompt',
   'open-settings',
+  'scene-changed',
 ])
 
 // Sanitize data crossing the bridge
@@ -144,5 +145,8 @@ contextBridge.exposeInMainWorld('dimensions', {
   },
   onOpenSettings: (cb: () => void) => {
     ipcRenderer.on('open-settings', () => cb())
+  },
+  onSceneChanged: (cb: (scene: any) => void) => {
+    ipcRenderer.on('scene-changed', (_event, scene) => cb(sanitize(scene) as any))
   },
 })

@@ -402,29 +402,31 @@ export function writeSceneHtml(scenePath: string, html: string): string {
 }
 
 /**
- * Ensure the home scene exists with a starter meta.json.
+ * Ensure the Home dimension exists with a "main" scene.
+ * Home is a dimension, not a standalone scene.
  */
-export function ensureHomeScene(homePath: string): void {
-  if (!fs.existsSync(homePath)) {
+export function ensureHomeDimension(): void {
+  const homePath = path.join(DIMENSIONS_DIR, 'home')
+
+  if (!fs.existsSync(DIMENSIONS_DIR)) {
+    fs.mkdirSync(DIMENSIONS_DIR, { recursive: true })
+  }
+
+  const dimJsonPath = path.join(homePath, 'dimension.json')
+
+  if (!fs.existsSync(dimJsonPath)) {
+    // Create the Home dimension with a "main" scene
     fs.mkdirSync(homePath, { recursive: true })
-  }
 
-  const widgetsDir = path.join(homePath, 'widgets')
-  if (!fs.existsSync(widgetsDir)) {
-    fs.mkdirSync(widgetsDir, { recursive: true })
-  }
+    const mainScenePath = path.join(homePath, 'main')
+    fs.mkdirSync(path.join(mainScenePath, 'widgets'), { recursive: true })
+    ensureBackgroundWidget(mainScenePath)
 
-  // Ensure _background widget exists
-  ensureBackgroundWidget(homePath)
-
-  const metaPath = path.join(homePath, 'meta.json')
-  if (!fs.existsSync(metaPath)) {
-    // ulid imported at top level
-    const meta: SceneMeta = {
+    const sceneMeta: SceneMeta = {
       id: ulid(),
-      title: 'Home',
-      slug: 'home',
-      theme: { background: '#0a0a0a', accent: '#7c3aed' },
+      title: 'Main',
+      slug: 'main',
+      theme: {},
       widgets: [
         {
           id: ulid(),
@@ -434,24 +436,19 @@ export function ensureHomeScene(homePath: string): void {
         },
       ],
     }
-    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8')
-  } else {
-    // Ensure existing scenes have the _background widget
-    try {
-      const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
-      const hasBackground = raw.widgets?.some((w: any) => w.widgetType === '_background')
-      if (!hasBackground) {
-        // ulid imported at top level
-        if (!raw.widgets) raw.widgets = []
-        raw.widgets.unshift({
-          id: ulid(),
-          widgetType: '_background',
-          manifestPath: 'widgets/_background/src/widget.manifest.json',
-          bounds: { x: 0, y: 0, width: 4000, height: 4000 },
-        })
-        fs.writeFileSync(metaPath, JSON.stringify(raw, null, 2), 'utf-8')
-      }
-    } catch {}
+    fs.writeFileSync(path.join(mainScenePath, 'meta.json'), JSON.stringify(sceneMeta, null, 2), 'utf-8')
+    fs.writeFileSync(path.join(mainScenePath, 'connections.json'), '[]', 'utf-8')
+
+    const dimMeta = {
+      id: ulid(),
+      title: 'Home',
+      slug: 'home',
+      scenes: ['main'],
+      entryScene: 'main',
+      theme: { background: '#0a0a0a', accent: '#7c3aed' },
+      sharedEnvKeys: [],
+    }
+    fs.writeFileSync(dimJsonPath, JSON.stringify(dimMeta, null, 2), 'utf-8')
   }
 }
 

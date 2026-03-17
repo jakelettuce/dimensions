@@ -41,22 +41,44 @@ export function CommandPalette() {
   const handleClose = useCallback(() => {
     closePalette()
     window.dimensions.paletteClose()
+    setMode('search')
+    setInputAction(null)
+    setInputValue('')
+    setQuery('')
+    setSelectedIndex(0)
   }, [closePalette])
 
   const handleInputSubmit = useCallback(async () => {
     const name = inputValue.trim()
     if (!name) return
+    const scene = useAppStore.getState().currentScene
 
     if (inputAction === 'new-scene') {
-      const result = await window.dimensions.createScene(name)
+      // If currently in a dimension, create the scene inside it
+      const dimPath = scene?.dimensionId
+        ? scene.path.replace(/\/[^/]+$/, '') // parent = dimension folder
+        : undefined
+      const result = await window.dimensions.createScene(name, dimPath)
       if ('scenePath' in result) {
-        // Navigate to the newly created scene
-        await window.dimensions.navigateTo(`dimensions://scene/${encodeURIComponent(name)}`)
+        // readDir returns the scene's meta.json id — navigate by reading it
+        const meta = await window.dimensions.readFile(result.scenePath + '/meta.json')
+        if (typeof meta === 'string') {
+          try {
+            const parsed = JSON.parse(meta)
+            await window.dimensions.navigateTo(`dimensions://go/${parsed.id}`)
+          } catch {}
+        }
       }
     } else if (inputAction === 'new-dimension') {
       const result = await window.dimensions.createDimension(name)
       if ('dimensionPath' in result) {
-        await window.dimensions.navigateTo(`dimensions://dimension/${encodeURIComponent(name)}`)
+        const dimJson = await window.dimensions.readFile(result.dimensionPath + '/dimension.json')
+        if (typeof dimJson === 'string') {
+          try {
+            const parsed = JSON.parse(dimJson)
+            await window.dimensions.navigateTo(`dimensions://go/${parsed.id}`)
+          } catch {}
+        }
       }
     }
 
@@ -262,9 +284,7 @@ export function CommandPalette() {
         switch (e.key) {
           case 'Escape':
             e.preventDefault()
-            setMode('search')
-            setInputAction(null)
-            setInputValue('')
+            handleClose()
             break
           case 'Enter':
             e.preventDefault()

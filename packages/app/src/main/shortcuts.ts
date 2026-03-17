@@ -128,10 +128,12 @@ export function registerGlobalShortcuts(db: Database): void {
     createWindow(db)
   })
 
-  // Cmd+T: new scene prompt
+  // Cmd+T: new scene — same hide as Cmd+K, then open palette in new-scene mode
   globalShortcut.register('CommandOrControl+T', () => {
     const dimWin = getFocusedDimWin()
     if (!dimWin) return
+    hideAllWCVs(dimWin)
+    dimWin.browserWindow.webContents.send('open-palette')
     dimWin.browserWindow.webContents.send('open-new-scene-prompt')
   })
 
@@ -175,7 +177,12 @@ export function registerGlobalShortcuts(db: Database): void {
 
         showAllWCVs(dimWin)
         dimWin.sceneWCV.webContents.loadURL(sceneUrl)
-        // Reposition existing portals (don't remount — that destroys and recreates them)
+        // Re-send edit mode after scene HTML reloads so handles are visible
+        dimWin.sceneWCV.webContents.once('did-finish-load', () => {
+          if (dimWin.editMode && !dimWin.sceneWCV.webContents.isDestroyed()) {
+            dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
+          }
+        })
         repositionPortals(dimWin)
       } else {
         showAllWCVs(dimWin)

@@ -39,6 +39,7 @@ declare global {
       onFocusTerminal: (cb: () => void) => void
       onOpenNewScenePrompt: (cb: () => void) => void
       onOpenSettings: (cb: () => void) => void
+      onSceneChanged: (cb: (scene: any) => void) => void
     }
   }
 }

@@ -18,18 +18,40 @@ export function TerminalView() {
   const termRef = useRef<any>(null)
   const fitRef = useRef<any>(null)
   const terminalIdRef = useRef<string | null>(null)
-  const { currentScene, editMode } = useAppStore()
+  const scenePathRef = useRef<string | null>(null)
+  const { currentScene } = useAppStore()
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Create terminal once, keep alive across edit mode toggles.
+  // Only recreate when scene path changes.
   useEffect(() => {
-    if (!editMode || !currentScene?.path) return
+    if (!currentScene?.path) return
 
     let destroyed = false
 
     async function init() {
       await loadXterm()
       if (destroyed || !containerRef.current) return
+
+      // If terminal already exists for this scene, just re-fit
+      if (termRef.current && scenePathRef.current === currentScene!.path) {
+        requestAnimationFrame(() => {
+          try { fitRef.current?.fit() } catch {}
+        })
+        return
+      }
+
+      // Cleanup previous terminal if scene changed
+      if (terminalIdRef.current) {
+        window.dimensions.removeTerminalOutputListener(terminalIdRef.current)
+        window.dimensions.destroyTerminal(terminalIdRef.current)
+        terminalIdRef.current = null
+      }
+      if (termRef.current) {
+        termRef.current.dispose()
+        termRef.current = null
+      }
 
       const term = new Terminal({
         fontSize: 13,
@@ -58,7 +80,6 @@ export function TerminalView() {
       term.loadAddon(fit)
       term.open(containerRef.current!)
 
-      // Small delay to ensure container has dimensions before fitting
       requestAnimationFrame(() => {
         if (!destroyed) {
           try { fit.fit() } catch {}
@@ -67,11 +88,11 @@ export function TerminalView() {
 
       termRef.current = term
       fitRef.current = fit
+      scenePathRef.current = currentScene!.path
 
-      // Create PTY in main process
+      // Create PTY in main process with cwd = scene path
       const result = await window.dimensions.createTerminal(currentScene!.path)
 
-      // Check if result is an error object or a terminal ID string
       if (typeof result === 'object' && result?.error) {
         setError(result.error)
         return
@@ -89,24 +110,20 @@ export function TerminalView() {
       const id = result
       terminalIdRef.current = id
 
-      // Wire output: PTY → xterm
       window.dimensions.onTerminalOutput(id, (data: string) => {
         if (termRef.current) {
           termRef.current.write(data)
         }
       })
 
-      // Wire input: xterm → PTY
       term.onData((data: string) => {
         window.dimensions.sendTerminalInput(id, data)
       })
 
-      // Handle resize
       term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
         window.dimensions.resizeTerminal(id, cols, rows)
       })
 
-      // Fit after a beat to get proper dimensions
       setTimeout(() => {
         if (!destroyed) {
           try { fit.fit() } catch {}
@@ -118,8 +135,15 @@ export function TerminalView() {
 
     init()
 
+    // Only cleanup on unmount or scene change — NOT on editMode toggle
     return () => {
       destroyed = true
+    }
+  }, [currentScene?.path])
+
+  // Full cleanup on unmount (component removed from DOM)
+  useEffect(() => {
+    return () => {
       if (terminalIdRef.current) {
         window.dimensions.removeTerminalOutputListener(terminalIdRef.current)
         window.dimensions.destroyTerminal(terminalIdRef.current)
@@ -130,14 +154,18 @@ export function TerminalView() {
         termRef.current = null
       }
       fitRef.current = null
-      setReady(false)
-      setError(null)
+      scenePathRef.current = null
     }
-  }, [editMode, currentScene?.path])
+  }, [])
 
-  // Resize on container size changes
+  // Re-fit when container becomes visible (edit mode toggle)
   useEffect(() => {
-    if (!fitRef.current || !ready) return
+    if (!fitRef.current) return
+
+    // Fit on next frame to pick up new container size
+    const raf = requestAnimationFrame(() => {
+      try { fitRef.current?.fit() } catch {}
+    })
 
     const observer = new ResizeObserver(() => {
       try { fitRef.current?.fit() } catch {}
@@ -147,8 +175,14 @@ export function TerminalView() {
       observer.observe(containerRef.current)
     }
 
-    return () => observer.disconnect()
+    return () => {
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+    }
   }, [ready])
+
+  // Note: when scene changes, the main effect re-runs and creates a new terminal
+  // with the new scene's cwd. No separate cd needed.
 
   if (error) {
     return (

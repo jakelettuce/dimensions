@@ -35,6 +35,9 @@ interface AppState {
 
   buildStatus: string
   setBuildStatus: (s: string) => void
+
+  openFilePath: string | null
+  setOpenFilePath: (p: string | null) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -60,4 +63,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   buildStatus: '',
   setBuildStatus: (s) => set({ buildStatus: s }),
+
+  openFilePath: null,
+  setOpenFilePath: (p) => set({ openFilePath: p }),
 }))

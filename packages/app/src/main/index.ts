@@ -35,7 +35,7 @@ import {
   getAllWindows,
   findWindowByWebContentsId,
 } from './window-manager'
-import { ensureHomeScene } from './scene-manager'
+import { ensureHomeDimension } from './scene-manager'
 import type { WidgetState, SceneState } from './scene-manager'
 import type { DimensionsWindow } from './window-manager'
 import { registerCapabilities } from './capabilities/index'
@@ -144,10 +144,18 @@ app.whenReady().then(async () => {
     }
   })
 
-  ensureHomeScene(HOME_SCENE_DIR)
+  ensureHomeDimension()
 
+  // Home is a dimension — load via protocol to get proper dimension routing
   const dimWin = createWindow(db)
-  loadSceneIntoWindow(dimWin, HOME_SCENE_DIR)
+  const homeMainPath = path.join(HOME_SCENE_DIR, 'main')
+  const homeDimId = (() => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(HOME_SCENE_DIR, 'dimension.json'), 'utf-8'))
+      return raw.id || null
+    } catch { return null }
+  })()
+  loadSceneIntoWindow(dimWin, homeMainPath, homeDimId, HOME_SCENE_DIR)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

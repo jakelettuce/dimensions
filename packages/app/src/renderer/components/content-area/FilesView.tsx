@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { ChevronRight, FileText, Folder } from 'lucide-react'
+import { useAppStore } from '@/stores/app-store'
 import { cn } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -111,17 +112,28 @@ function TreeItem({ node, depth, selectedPath, onSelect, onToggle }: TreeItemPro
 
 interface FilesViewProps {
   scenePath: string
+  title?: string
+  defaultFilePath?: string
 }
 
-export function FilesView({ scenePath }: FilesViewProps) {
+export function FilesView({ scenePath, title, defaultFilePath }: FilesViewProps) {
   const [tree, setTree] = useState<TreeNode[]>([])
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const { openFilePath, setOpenFilePath } = useAppStore()
+  // Only restore if the persisted file is within the current scene root
+  const validPersistedFile = openFilePath?.startsWith(scenePath) ? openFilePath : null
+  const [selectedFile, setSelectedFileLocal] = useState<string | null>(validPersistedFile)
   const [fileContent, setFileContent] = useState<string>('')
   const [dirty, setDirty] = useState(false)
 
   const editorRef = useRef<any>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const currentPathRef = useRef<string | null>(null)
+  const currentPathRef = useRef<string | null>(validPersistedFile)
+
+  // Persist selected file to store
+  const setSelectedFile = useCallback((p: string | null) => {
+    setSelectedFileLocal(p)
+    setOpenFilePath(p)
+  }, [setOpenFilePath])
 
   // ---- load directory children ----
   const loadChildren = useCallback(async (dirPath: string): Promise<TreeNode[]> => {
@@ -155,16 +167,45 @@ export function FilesView({ scenePath }: FilesViewProps) {
     async function init() {
       const root = await loadChildren(scenePath)
 
-      // Auto-expand the widgets folder
+      // Determine which file to open
+      const fileToOpen = (openFilePath && openFilePath.startsWith(scenePath))
+        ? openFilePath
+        : defaultFilePath || null
+
+      // Auto-expand folders containing the file to open, plus widgets folders
       for (const node of root) {
-        if (node.isDirectory && node.name === 'widgets') {
+        if (!node.isDirectory) continue
+        // Expand if this folder contains the target file
+        const shouldExpand = (fileToOpen && fileToOpen.startsWith(node.path + '/'))
+          || node.name === 'widgets'
+        if (shouldExpand) {
           node.children = await loadChildren(node.path)
           node.expanded = true
           node.loaded = true
+          // Also expand nested widgets folders
+          if (node.children) {
+            for (const child of node.children) {
+              if (child.isDirectory && child.name === 'widgets') {
+                child.children = await loadChildren(child.path)
+                child.expanded = true
+                child.loaded = true
+              }
+            }
+          }
         }
       }
 
-      if (!cancelled) setTree(root)
+      if (!cancelled) {
+        setTree(root)
+        if (fileToOpen) {
+          const result = await window.dimensions.readFile(fileToOpen)
+          if (typeof result === 'string') {
+            currentPathRef.current = fileToOpen
+            setSelectedFile(fileToOpen)
+            setFileContent(result)
+          }
+        }
+      }
     }
 
     init()
@@ -273,7 +314,7 @@ export function FilesView({ scenePath }: FilesViewProps) {
         )}
       >
         <div className="flex items-center px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
-          Files
+          {title || 'Files'}
         </div>
         <div className="flex-1 overflow-y-auto px-1 pb-2">
           {tree.map((node) => (
@@ -306,7 +347,7 @@ export function FilesView({ scenePath }: FilesViewProps) {
             <div className="flex-1">
               <Editor
                 key={selectedFile}
-                defaultValue={fileContent}
+                value={fileContent}
                 language={langFromPath(selectedFile)}
                 theme="vs-dark"
                 onChange={handleEditorChange}

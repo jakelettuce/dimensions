@@ -68,6 +68,11 @@ export default function App() {
       useAppStore.getState().setEditorTool('claude')
     })
 
+    // Scene changed (navigation, sequential nav, etc.)
+    window.dimensions.onSceneChanged((scene) => {
+      if (scene) setCurrentScene(scene)
+    })
+
     // Load initial scene
     window.dimensions.getCurrentScene().then((scene) => {
       if (scene) setCurrentScene(scene)
@@ -83,7 +88,9 @@ export default function App() {
           <ContentArea />
           <BuildStatusToast />
         </div>
-        {editMode && <EditorToolsPanel />}
+        <div className={editMode ? '' : 'hidden'}>
+          <EditorToolsPanel />
+        </div>
       </div>
 
       <CommandPalette />
