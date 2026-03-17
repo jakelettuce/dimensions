@@ -53,7 +53,7 @@ export function SceneSidebar() {
   return (
     <div
       className={cn(
-        'w-[280px] shrink-0 flex flex-col',
+        'w-full flex flex-col',
         'bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)]',
         'overflow-hidden',
       )}

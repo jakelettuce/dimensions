@@ -20,6 +20,7 @@ const INVOKE_CHANNELS = new Set([
   'toggle-wcv-visibility',
   'create-scene',
   'create-dimension',
+  'update-panel-widths',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -110,6 +111,10 @@ contextBridge.exposeInMainWorld('dimensions', {
   // Scene & dimension creation
   createScene: (title: string, dimensionPath?: string) => ipcRenderer.invoke('create-scene', title, dimensionPath),
   createDimension: (title: string) => ipcRenderer.invoke('create-dimension', title),
+
+  // Panel width sync — tells main process to update WCV bounds
+  updatePanelWidths: (sidebarWidth: number, editorWidth: number) =>
+    ipcRenderer.invoke('update-panel-widths', sidebarWidth, editorWidth),
 
   // Palette close (restore scene WCV)
   paletteClose: () => ipcRenderer.invoke('palette-close'),

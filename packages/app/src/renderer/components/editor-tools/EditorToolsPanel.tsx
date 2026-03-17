@@ -10,8 +10,8 @@ export function EditorToolsPanel() {
   return (
     <div
       className={cn(
-        'flex flex-col border-l shrink-0',
-        'w-[var(--editor-panel-width)] bg-[var(--color-bg-secondary)] border-[var(--color-border)]',
+        'flex flex-col border-l h-full w-full',
+        'bg-[var(--color-bg-secondary)] border-[var(--color-border)]',
       )}
     >
       {/* Tool tabs */}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
 import { TopBar } from '@/components/top-bar/TopBar'
@@ -7,11 +7,16 @@ import { ContentArea } from '@/components/content-area/ContentArea'
 import { CommandPalette } from '@/components/command-palette/CommandPalette'
 import { SceneSidebar } from '@/components/scene-sidebar/SceneSidebar'
 import { ToolBar } from '@/components/top-bar/ToolBar'
+import { ResizeHandle } from '@/components/ResizeHandle'
 import '@xterm/xterm/css/xterm.css'
 
 export default function App() {
-  const { editMode, sceneSidebarOpen, setEditMode, setCurrentScene, setSceneSidebarOpen, selectWidget, setBuildStatus } =
-    useAppStore()
+  const {
+    editMode, sceneSidebarOpen,
+    setEditMode, setCurrentScene, setSceneSidebarOpen, selectWidget, setBuildStatus,
+    sceneSidebarWidth, setSceneSidebarWidth,
+    editorPanelWidth, setEditorPanelWidth,
+  } = useAppStore()
 
   useEffect(() => {
     // Edit mode — when leaving, switch back to live view
@@ -86,10 +91,46 @@ export default function App() {
     })
   }, [])
 
+  // Debounced sync to main process — only fire every 16ms (one frame)
+  const syncTimerRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null)
+  const pendingWidthsRef = useRef<{ sw: number; ew: number } | null>(null)
+
+  const syncWidths = useCallback((sw: number, ew: number) => {
+    pendingWidthsRef.current = { sw, ew }
+    if (!syncTimerRef.current) {
+      syncTimerRef.current = requestAnimationFrame(() => {
+        syncTimerRef.current = null
+        const p = pendingWidthsRef.current
+        if (p) window.dimensions.updatePanelWidths(p.sw, p.ew)
+      })
+    }
+  }, [])
+
+  const handleSidebarResize = useCallback((delta: number) => {
+    const store = useAppStore.getState()
+    const newW = Math.max(200, Math.min(500, store.sceneSidebarWidth + delta))
+    store.setSceneSidebarWidth(newW)
+    syncWidths(newW, store.editorPanelWidth)
+  }, [syncWidths])
+
+  const handleEditorResize = useCallback((delta: number) => {
+    const store = useAppStore.getState()
+    const newW = Math.max(280, Math.min(700, store.editorPanelWidth + delta))
+    store.setEditorPanelWidth(newW)
+    syncWidths(store.sceneSidebarWidth, newW)
+  }, [syncWidths])
+
   return (
     <div className={cn('flex h-full')}>
       {/* Scene sidebar — full height, leftmost */}
-      {sceneSidebarOpen && <SceneSidebar />}
+      {sceneSidebarOpen && (
+        <>
+          <div style={{ width: sceneSidebarWidth }} className="shrink-0 flex">
+            <SceneSidebar />
+          </div>
+          <ResizeHandle side="left" onResize={handleSidebarResize} />
+        </>
+      )}
 
       {/* Main area (bars + content + editor) */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -101,7 +142,8 @@ export default function App() {
             <ContentArea />
             <BuildStatusToast />
           </div>
-          <div className={editMode ? '' : 'hidden'}>
+          {editMode && <ResizeHandle side="right" onResize={handleEditorResize} />}
+          <div style={{ width: editorPanelWidth }} className={editMode ? 'shrink-0 flex' : 'hidden'}>
             <EditorToolsPanel />
           </div>
         </div>

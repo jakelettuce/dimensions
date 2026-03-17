@@ -41,6 +41,7 @@ declare global {
       onOpenSettings: (cb: () => void) => void
       onSceneChanged: (cb: (scene: any) => void) => void
       onSceneSidebarChange: (cb: (open: boolean) => void) => void
+      updatePanelWidths: (sidebarWidth: number, editorWidth: number) => Promise<void>
     }
   }
 }

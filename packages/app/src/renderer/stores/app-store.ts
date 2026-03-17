@@ -39,6 +39,12 @@ interface AppState {
   sceneSidebarOpen: boolean
   setSceneSidebarOpen: (v: boolean) => void
 
+  sceneSidebarWidth: number
+  setSceneSidebarWidth: (w: number) => void
+
+  editorPanelWidth: number
+  setEditorPanelWidth: (w: number) => void
+
   openFilePath: string | null
   setOpenFilePath: (p: string | null) => void
 }
@@ -69,6 +75,12 @@ export const useAppStore = create<AppState>((set) => ({
 
   sceneSidebarOpen: false,
   setSceneSidebarOpen: (v) => set({ sceneSidebarOpen: v }),
+
+  sceneSidebarWidth: 280,
+  setSceneSidebarWidth: (w) => set({ sceneSidebarWidth: w }),
+
+  editorPanelWidth: 420,
+  setEditorPanelWidth: (w) => set({ editorPanelWidth: w }),
 
   openFilePath: null,
   setOpenFilePath: (p) => set({ openFilePath: p }),

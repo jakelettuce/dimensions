@@ -28,6 +28,8 @@ export interface DimensionsWindow {
   currentScene: SceneState | null
   editMode: boolean
   sceneSidebarOpen: boolean
+  sidebarWidth: number
+  editorPanelWidth: number
 }
 
 // ── Window registry ──
@@ -156,6 +158,8 @@ export function createWindow(db: Database): DimensionsWindow {
     currentScene: null,
     editMode: false,
     sceneSidebarOpen: false,
+    sidebarWidth: 280,
+    editorPanelWidth: 420,
   }
 
   windows.set(windowId, dimWin)
@@ -380,11 +384,9 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
 
 // ── WCV bounds management ──
 
-// Layout constants (must match renderer CSS vars)
+// Layout constants
 const TOPBAR_HEIGHT = 40
 const TOOLBAR_HEIGHT = 32
-const EDITOR_PANEL_WIDTH = 420
-const SCENE_SIDEBAR_WIDTH = 280
 
 export function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
   if (dimWin.browserWindow.isDestroyed()) return
@@ -393,17 +395,17 @@ export function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
 
   let x = 0, y = TOPBAR_HEIGHT, w = width, h = height - TOPBAR_HEIGHT
 
-  // Scene sidebar (left side)
+  // Scene sidebar (left side, full height)
   if (dimWin.sceneSidebarOpen) {
-    x += SCENE_SIDEBAR_WIDTH
-    w -= SCENE_SIDEBAR_WIDTH
+    x += dimWin.sidebarWidth
+    w -= dimWin.sidebarWidth
   }
 
   // Edit mode (toolbar + right panel)
   if (dimWin.editMode) {
     y += TOOLBAR_HEIGHT
     h -= TOOLBAR_HEIGHT
-    w -= EDITOR_PANEL_WIDTH
+    w -= dimWin.editorPanelWidth
   }
 
   dimWin.sceneWCV.setBounds({ x, y, width: Math.max(w, 100), height: Math.max(h, 100) })
@@ -490,6 +492,15 @@ export function registerWindowIpcHandlers(): void {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
     return toggleEditMode(dimWin)
+  })
+
+  // Panel width updates from renderer (resize handles)
+  ipcMain.handle('update-panel-widths', (event, sidebarWidth: unknown, editorWidth: unknown) => {
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin) return
+    if (typeof sidebarWidth === 'number') dimWin.sidebarWidth = sidebarWidth
+    if (typeof editorWidth === 'number') dimWin.editorPanelWidth = editorWidth
+    updateSceneWCVBounds(dimWin)
   })
 
   // Scene scroll — reposition portals to track scroll position
