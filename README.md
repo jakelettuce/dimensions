@@ -34,16 +34,20 @@ You: using it 30 seconds later
 ```
 ~/Dimensions/
   morning-routine/              # a "dimension" (grouped scenes)
-    dimension.json
-    inbox/                      # scene
+    dimension.json              # title, scene order, shared theme, shared env keys
+    inbox/                      # scene 1
       meta.json
       widgets/
+        _background/            # every scene gets a customizable background widget
+          src/index.html
         email-summary/
           src/index.html        # Claude Code writes this
           dist/bundle.html      # esbuild compiles this
-    calendar/                   # scene
-    focus/                      # scene
-  home/                         # standalone scene
+    calendar/                   # scene 2
+    focus/                      # scene 3
+  home/                         # standalone scene (not in a dimension)
+    meta.json
+    widgets/...
 ```
 
 ### Process model
@@ -77,7 +81,7 @@ Renderer (app chrome, trusted)
 - **Scenes** are folders containing widgets, metadata, and wiring
 - **Widgets** are self-contained HTML/JS/CSS — custom UIs, embedded websites, or terminals. Every scene includes a `_background` widget that renders full-screen behind everything else — edit it for gradients, animations, canvas, video, live data, anything
 - **Webportals** embed real websites (Gmail, GitHub, anything) via dual-WebContentsView architecture — browser chrome WCV (URL bar, tabs, nav) + content WCV (the actual site, fully sandboxed). Supports multiple tabs, CSS injection, and per-domain styling rules
-- **Dimensions** group scenes into packages with shared config and ordered flows
+- **Dimensions** group scenes into ordered flows with shared theme and env config. Navigate sequentially with `sdk.navigate.next()` / `previous()`, or jump to any scene. The command palette groups scenes by dimension with breadcrumb navigation
 - **`@dimensions/sdk`** gives widgets access to storage, network, navigation, theming, portal control, and more — all capability-gated
 - **Dataflow** wires widgets together — a schedule widget can drive a portal's URL, a theme widget can inject CSS into portals, outputs from one widget feed inputs to another via `connections.json`
 - **Two protocols:** `dimensions://` for navigation, `dimensions-asset://` for static file serving — separated for security
