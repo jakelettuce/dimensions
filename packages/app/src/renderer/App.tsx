@@ -5,10 +5,11 @@ import { TopBar } from '@/components/top-bar/TopBar'
 import { EditorToolsPanel } from '@/components/editor-tools/EditorToolsPanel'
 import { ContentArea } from '@/components/content-area/ContentArea'
 import { CommandPalette } from '@/components/command-palette/CommandPalette'
+import { SceneSidebar } from '@/components/scene-sidebar/SceneSidebar'
 import '@xterm/xterm/css/xterm.css'
 
 export default function App() {
-  const { editMode, setEditMode, setCurrentScene, selectWidget, setBuildStatus } =
+  const { editMode, sceneSidebarOpen, setEditMode, setCurrentScene, setSceneSidebarOpen, selectWidget, setBuildStatus } =
     useAppStore()
 
   useEffect(() => {
@@ -68,6 +69,11 @@ export default function App() {
       useAppStore.getState().setEditorTool('claude')
     })
 
+    // Scene sidebar toggle
+    window.dimensions.onSceneSidebarChange((open) => {
+      setSceneSidebarOpen(open)
+    })
+
     // Scene changed (navigation, sequential nav, etc.)
     window.dimensions.onSceneChanged((scene) => {
       if (scene) setCurrentScene(scene)
@@ -84,6 +90,7 @@ export default function App() {
       {editMode && <TopBar />}
 
       <div className="flex flex-1 min-h-0">
+        {sceneSidebarOpen && <SceneSidebar />}
         <div className="flex-1 relative">
           <ContentArea />
           <BuildStatusToast />

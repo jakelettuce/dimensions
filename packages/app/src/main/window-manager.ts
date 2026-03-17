@@ -27,6 +27,7 @@ export interface DimensionsWindow {
   prewarmedWCV: WebContentsView | null
   currentScene: SceneState | null
   editMode: boolean
+  sceneSidebarOpen: boolean
 }
 
 // ── Window registry ──
@@ -154,6 +155,7 @@ export function createWindow(db: Database): DimensionsWindow {
     prewarmedWCV,
     currentScene: null,
     editMode: false,
+    sceneSidebarOpen: false,
   }
 
   windows.set(windowId, dimWin)
@@ -370,34 +372,29 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
 // Layout constants (must match renderer CSS vars)
 const TOPBAR_HEIGHT = 40
 const EDITOR_PANEL_WIDTH = 420
+const SCENE_SIDEBAR_WIDTH = 280
 
-function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
+export function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
   if (dimWin.browserWindow.isDestroyed()) return
 
   const [width, height] = dimWin.browserWindow.getContentSize()
 
-  let bounds: { x: number; y: number; width: number; height: number }
+  let x = 0, y = 0, w = width, h = height
 
+  // Scene sidebar (left side)
+  if (dimWin.sceneSidebarOpen) {
+    x += SCENE_SIDEBAR_WIDTH
+    w -= SCENE_SIDEBAR_WIDTH
+  }
+
+  // Edit mode chrome (top + right)
   if (dimWin.editMode) {
-    // In edit mode: scene WCV shrinks to make room for top bar and editor panel
-    bounds = {
-      x: 0,
-      y: TOPBAR_HEIGHT,
-      width: Math.max(0, width - EDITOR_PANEL_WIDTH),
-      height: Math.max(0, height - TOPBAR_HEIGHT),
-    }
-  } else {
-    // In use mode: scene fills the window
-    bounds = { x: 0, y: 0, width, height }
+    y += TOPBAR_HEIGHT
+    h -= TOPBAR_HEIGHT
+    w -= EDITOR_PANEL_WIDTH
   }
 
-  dimWin.sceneWCV.setBounds(bounds)
-
-  // Rule 3: Verify bounds
-  const actual = dimWin.sceneWCV.getBounds()
-  if (actual.width === 0 || actual.height === 0) {
-    console.warn('Scene WCV zero-size after resize:', actual)
-  }
+  dimWin.sceneWCV.setBounds({ x, y, width: Math.max(w, 100), height: Math.max(h, 100) })
 
   // Reposition all portal WCVs to match the new scene WCV position
   repositionPortals(dimWin)

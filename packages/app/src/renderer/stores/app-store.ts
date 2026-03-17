@@ -36,6 +36,9 @@ interface AppState {
   buildStatus: string
   setBuildStatus: (s: string) => void
 
+  sceneSidebarOpen: boolean
+  setSceneSidebarOpen: (v: boolean) => void
+
   openFilePath: string | null
   setOpenFilePath: (p: string | null) => void
 }
@@ -63,6 +66,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   buildStatus: '',
   setBuildStatus: (s) => set({ buildStatus: s }),
+
+  sceneSidebarOpen: false,
+  setSceneSidebarOpen: (v) => set({ sceneSidebarOpen: v }),
 
   openFilePath: null,
   setOpenFilePath: (p) => set({ openFilePath: p }),

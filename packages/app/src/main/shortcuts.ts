@@ -1,6 +1,6 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
-import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, createWindow, type DimensionsWindow } from './window-manager'
+import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, createWindow, updateSceneWCVBounds, type DimensionsWindow } from './window-manager'
 import type { Database } from 'sql.js'
 import { loadSceneFromDisk, generateSceneHtml, writeSceneHtml } from './scene-manager'
 import { getPortal, mountAllWebportals, repositionPortals } from './webportal-manager'
@@ -82,6 +82,15 @@ export function registerGlobalShortcuts(db: Database): void {
     if (!dimWin) return
     hideAllWCVs(dimWin)
     dimWin.browserWindow.webContents.send('open-palette')
+  })
+
+  // Cmd+S: Toggle scene sidebar
+  globalShortcut.register('CommandOrControl+S', () => {
+    const dimWin = getFocusedDimWin()
+    if (!dimWin) return
+    dimWin.sceneSidebarOpen = !dimWin.sceneSidebarOpen
+    updateSceneWCVBounds(dimWin)
+    dimWin.browserWindow.webContents.send('scene-sidebar', dimWin.sceneSidebarOpen)
   })
 
   // Cmd+1: Claude Code terminal tab

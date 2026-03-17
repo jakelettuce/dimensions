@@ -41,6 +41,7 @@ const RECEIVE_CHANNELS = new Set([
   'open-new-scene-prompt',
   'open-settings',
   'scene-changed',
+  'scene-sidebar',
 ])
 
 // Sanitize data crossing the bridge
@@ -148,5 +149,8 @@ contextBridge.exposeInMainWorld('dimensions', {
   },
   onSceneChanged: (cb: (scene: any) => void) => {
     ipcRenderer.on('scene-changed', (_event, scene) => cb(sanitize(scene) as any))
+  },
+  onSceneSidebarChange: (cb: (open: boolean) => void) => {
+    ipcRenderer.on('scene-sidebar', (_event, open) => cb(open))
   },
 })

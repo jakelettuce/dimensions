@@ -40,6 +40,7 @@ declare global {
       onOpenNewScenePrompt: (cb: () => void) => void
       onOpenSettings: (cb: () => void) => void
       onSceneChanged: (cb: (scene: any) => void) => void
+      onSceneSidebarChange: (cb: (open: boolean) => void) => void
     }
   }
 }
