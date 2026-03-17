@@ -42,6 +42,13 @@ declare global {
       onSceneChanged: (cb: (scene: any) => void) => void
       onSceneSidebarChange: (cb: (open: boolean) => void) => void
       updatePanelWidths: (sidebarWidth: number, editorWidth: number) => Promise<void>
+      // Scale mode
+      setScaleMode: (mode: string) => Promise<void>
+      onScaleModeChange: (cb: (mode: string) => void) => void
+      // Zoom
+      onZoomChange: (cb: (zoom: number) => void) => void
+      // Scene updated
+      onSceneUpdated: (cb: (scene: any) => void) => void
     }
   }
 }

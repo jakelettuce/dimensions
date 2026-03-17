@@ -5,6 +5,7 @@ import { buildWidget, resolveWidgetSrcDir, resolveWidgetId } from './builder'
 export interface WatcherCallbacks {
   onWidgetBuilt: (widgetId: string, success: boolean, error?: string) => void
   onSceneMetaChanged?: () => void
+  onLayoutChanged?: () => void
 }
 
 const watcherState: {
@@ -63,11 +64,12 @@ export function watchScene(scenePath: string, callbacks: WatcherCallbacks): void
   watcherState.watcher.on('change', handleChange)
   watcherState.watcher.on('add', handleChange)
 
-  // Watch meta.json and connections.json for scene-level changes
+  // Watch meta.json, connections.json, and layout.html for scene-level changes
   const metaPath = path.join(scenePath, 'meta.json')
   const connectionsPath = path.join(scenePath, 'connections.json')
+  const layoutPath = path.join(scenePath, 'layout.html')
 
-  watcherState.metaWatcher = chokidar.watch([metaPath, connectionsPath], {
+  watcherState.metaWatcher = chokidar.watch([metaPath, connectionsPath, layoutPath], {
     ignoreInitial: true,
     awaitWriteFinish: {
       stabilityThreshold: 200,
@@ -75,9 +77,27 @@ export function watchScene(scenePath: string, callbacks: WatcherCallbacks): void
     },
   })
 
-  watcherState.metaWatcher.on('change', () => {
-    if (callbacks.onSceneMetaChanged) {
+  watcherState.metaWatcher.on('change', (filePath) => {
+    if (filePath === layoutPath) {
+      // layout.html changed — trigger full scene reload
+      if (callbacks.onLayoutChanged) {
+        callbacks.onLayoutChanged()
+      }
+    } else if (callbacks.onSceneMetaChanged) {
       callbacks.onSceneMetaChanged()
+    }
+  })
+
+  // Watch for creation/deletion of layout.html (mode switch)
+  watcherState.metaWatcher.on('add', (filePath) => {
+    if (filePath === layoutPath && callbacks.onLayoutChanged) {
+      callbacks.onLayoutChanged()
+    }
+  })
+
+  watcherState.metaWatcher.on('unlink', (filePath) => {
+    if (filePath === layoutPath && callbacks.onLayoutChanged) {
+      callbacks.onLayoutChanged()
     }
   })
 }

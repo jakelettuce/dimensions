@@ -10,6 +10,8 @@ interface SceneInfo {
   dimensionScenes?: string[] | null
   widgets: any[]
   theme?: { background: string; accent: string; [key: string]: string }
+  layoutMode?: 'canvas' | 'layout'
+  viewport?: { width: number; height: number }
 }
 
 interface AppState {
@@ -47,6 +49,15 @@ interface AppState {
 
   openFilePath: string | null
   setOpenFilePath: (p: string | null) => void
+
+  layoutMode: 'canvas' | 'layout'
+  setLayoutMode: (m: 'canvas' | 'layout') => void
+
+  scaleMode: 'fit' | 'original'
+  setScaleMode: (m: 'fit' | 'original') => void
+
+  zoom: number
+  setZoom: (z: number) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -84,4 +95,13 @@ export const useAppStore = create<AppState>((set) => ({
 
   openFilePath: null,
   setOpenFilePath: (p) => set({ openFilePath: p }),
+
+  layoutMode: 'canvas',
+  setLayoutMode: (m) => set({ layoutMode: m }),
+
+  scaleMode: 'fit',
+  setScaleMode: (m) => set({ scaleMode: m }),
+
+  zoom: 1,
+  setZoom: (z) => set({ zoom: z }),
 }))

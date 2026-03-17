@@ -15,6 +15,7 @@ import { destroyTerminalsForWindow } from './terminal'
 import { repositionPortals, freezePortals, mountAllWebportals, destroyAllPortals, setSceneScroll } from './webportal-manager'
 import { generateClaudeMd } from './claude-md'
 import { resolveRoute } from './protocol'
+import type { Bounds } from './schemas'
 import type { Database } from 'sql.js'
 
 // ── Types ──
@@ -30,6 +31,10 @@ export interface DimensionsWindow {
   sceneSidebarOpen: boolean
   sidebarWidth: number
   editorPanelWidth: number
+  zoom: number
+  scaleMode: 'fit' | 'original'
+  totalScale: number
+  layoutWidgetBounds: Map<string, Bounds>
 }
 
 // ── Window registry ──
@@ -160,6 +165,10 @@ export function createWindow(db: Database): DimensionsWindow {
     sceneSidebarOpen: false,
     sidebarWidth: 280,
     editorPanelWidth: 420,
+    zoom: 1,
+    scaleMode: 'fit',
+    totalScale: 1,
+    layoutWidgetBounds: new Map(),
   }
 
   windows.set(windowId, dimWin)
@@ -231,6 +240,9 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
   try {
     const scene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
     dimWin.currentScene = scene
+    dimWin.layoutWidgetBounds.clear()
+    dimWin.zoom = 1
+    dimWin.totalScale = 1
 
     // Initial build of all custom widgets (async, non-blocking)
     // Uses widgetDir from WidgetState — no scanning needed
@@ -355,10 +367,66 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
               dimensionId: updatedScene.dimensionId,
               widgets: updatedScene.meta.widgets,
               theme: updatedScene.meta.theme,
+              dimensionTitle: updatedScene.dimensionMeta?.title ?? null,
+              dimensionScenes: updatedScene.dimensionMeta?.scenes ?? null,
+              layoutMode: updatedScene.layoutMode,
+              viewport: updatedScene.meta.viewport ?? null,
+              scaleMode: dimWin.scaleMode,
             }))
           }
         } catch (e) {
           console.error('Failed to reload scene after meta change:', e)
+        }
+      },
+
+      // layout.html created, changed, or deleted — full scene reload (mode switch)
+      onLayoutChanged: () => {
+        if (dimWin.browserWindow.isDestroyed()) return
+        try {
+          // Destroy existing portals before mode switch
+          destroyAllPortals(dimWin)
+          dimWin.layoutWidgetBounds.clear()
+
+          const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
+          dimWin.currentScene = updatedScene
+
+          const html = generateSceneHtml(updatedScene)
+          const htmlPath = writeSceneHtml(scenePath, html)
+          const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
+          const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+
+          dimWin.sceneWCV.webContents.loadURL(sceneUrl)
+          mountAllWebportals(dimWin)
+
+          if (dimWin.editMode) {
+            freezePortals(dimWin, true)
+            dimWin.sceneWCV.webContents.once('did-finish-load', () => {
+              if (dimWin.editMode && !dimWin.sceneWCV.webContents.isDestroyed()) {
+                dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
+              }
+            })
+          }
+
+          generateClaudeMd(updatedScene)
+
+          if (!dimWin.browserWindow.isDestroyed()) {
+            dimWin.browserWindow.webContents.send('scene-changed', sanitizeIpcData({
+              id: updatedScene.id,
+              slug: updatedScene.slug,
+              title: updatedScene.meta.title,
+              path: updatedScene.path,
+              dimensionId: updatedScene.dimensionId,
+              widgets: updatedScene.meta.widgets,
+              theme: updatedScene.meta.theme,
+              dimensionTitle: updatedScene.dimensionMeta?.title ?? null,
+              dimensionScenes: updatedScene.dimensionMeta?.scenes ?? null,
+              layoutMode: updatedScene.layoutMode,
+              viewport: updatedScene.meta.viewport ?? null,
+              scaleMode: dimWin.scaleMode,
+            }))
+          }
+        } catch (e) {
+          console.error('Failed to reload scene after layout change:', e)
         }
       },
     })
@@ -378,6 +446,9 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
       theme: dimWin.currentScene.meta.theme,
       dimensionTitle: dimWin.currentScene.dimensionMeta?.title ?? null,
       dimensionScenes: dimWin.currentScene.dimensionMeta?.scenes ?? null,
+      layoutMode: dimWin.currentScene.layoutMode,
+      viewport: dimWin.currentScene.meta.viewport ?? null,
+      scaleMode: dimWin.scaleMode,
     }))
   }
 }
@@ -455,6 +526,9 @@ export function registerWindowIpcHandlers(): void {
       theme: dimWin.currentScene.meta.theme,
       dimensionTitle: dimWin.currentScene.dimensionMeta?.title ?? null,
       dimensionScenes: dimWin.currentScene.dimensionMeta?.scenes ?? null,
+      layoutMode: dimWin.currentScene.layoutMode,
+      viewport: dimWin.currentScene.meta.viewport ?? null,
+      scaleMode: dimWin.scaleMode,
     })
   })
 
@@ -508,5 +582,58 @@ export function registerWindowIpcHandlers(): void {
     if (typeof scrollX !== 'number' || typeof scrollY !== 'number') return
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (dimWin) setSceneScroll(dimWin, scrollX, scrollY)
+  })
+
+  // Scene reports its computed total scale (viewport scale × zoom)
+  ipcMain.on('scene:report-scale', (event, scale: unknown) => {
+    if (typeof scale !== 'number') return
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin) return
+    dimWin.totalScale = scale
+    repositionPortals(dimWin)
+  })
+
+  // Set scale mode (fit or original) — sent from renderer toolbar
+  ipcMain.handle('set-scale-mode', (event, mode: unknown) => {
+    if (mode !== 'fit' && mode !== 'original') return
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin) return
+    dimWin.scaleMode = mode
+    dimWin.sceneWCV.webContents.send('scene:scale-mode', mode)
+    if (!dimWin.browserWindow.isDestroyed()) {
+      dimWin.browserWindow.webContents.send('scale-mode-changed', mode)
+    }
+  })
+
+  // Zoom delta from ctrl+scroll in scene
+  ipcMain.on('scene:zoom-delta', (event, delta: unknown) => {
+    if (typeof delta !== 'number') return
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin) return
+    const factor = delta > 0 ? 1.05 : 1 / 1.05
+    const newZoom = Math.max(0.25, Math.min(3.0, dimWin.zoom * factor))
+    dimWin.zoom = newZoom
+    dimWin.sceneWCV.webContents.send('scene:zoom', newZoom)
+    if (!dimWin.browserWindow.isDestroyed()) {
+      dimWin.browserWindow.webContents.send('zoom-changed', newZoom)
+    }
+  })
+
+  // Layout mode: widget reports its bounds from getBoundingClientRect
+  ipcMain.on('scene:widget-bounds', (event, widgetId: unknown, bounds: unknown) => {
+    if (typeof widgetId !== 'string') return
+    if (!bounds || typeof bounds !== 'object') return
+    const b = bounds as any
+    if (typeof b.x !== 'number' || typeof b.y !== 'number' ||
+        typeof b.width !== 'number' || typeof b.height !== 'number') return
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin) return
+    dimWin.layoutWidgetBounds.set(widgetId, {
+      x: b.x,
+      y: b.y,
+      width: Math.max(1, b.width),
+      height: Math.max(1, b.height),
+    })
+    repositionPortals(dimWin)
   })
 }

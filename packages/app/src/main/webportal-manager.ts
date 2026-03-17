@@ -109,15 +109,16 @@ const MIN_VISIBLE_SIZE = 40 // hide portal if smaller than this
 function calculatePortalBounds(
   widgetBounds: Bounds,
   scene: SceneBounds,
+  scale: number = 1,
 ): { chrome: Electron.Rectangle; content: Electron.Rectangle; hidden: boolean } {
   const scrollX = scene.scrollX || 0
   const scrollY = scene.scrollY || 0
 
-  // Widget position adjusted for scroll
-  let absX = Math.round(widgetBounds.x + scene.x - scrollX)
-  let absY = Math.round(widgetBounds.y + scene.y - scrollY)
-  let width = Math.round(widgetBounds.width)
-  let height = Math.round(widgetBounds.height)
+  // Widget position adjusted for scroll, scaled
+  let absX = Math.round(widgetBounds.x * scale + scene.x - scrollX)
+  let absY = Math.round(widgetBounds.y * scale + scene.y - scrollY)
+  let width = Math.round(widgetBounds.width * scale)
+  let height = Math.round(widgetBounds.height * scale)
 
   // Clamp left edge: if portal starts before scene left edge
   if (absX < scene.x) {
@@ -374,7 +375,7 @@ function createTab(
     const sceneBounds = dimWin.sceneWCV.getBounds()
     const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
     if (widgetBounds) {
-      const bounds = calculatePortalBounds(widgetBounds, sceneBounds)
+      const bounds = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
       contentWCV.setBounds(bounds.content)
     }
   }
@@ -431,7 +432,7 @@ function closeTab(
       const sceneBounds = dimWin.sceneWCV.getBounds()
       const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
       if (widgetBounds) {
-        const bounds = calculatePortalBounds(widgetBounds, sceneBounds)
+        const bounds = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
         newActiveTab.contentWCV.setBounds(bounds.content)
       }
     }
@@ -483,7 +484,7 @@ export function switchPortalTab(
     const sceneBounds = dimWin.sceneWCV.getBounds()
     const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
     if (widgetBounds) {
-      const bounds = calculatePortalBounds(widgetBounds, sceneBounds)
+      const bounds = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
       newTab.contentWCV.setBounds(bounds.content)
     }
 
@@ -504,6 +505,10 @@ function getWidgetBounds(
   widgetId: string,
 ): Bounds | null {
   if (!dimWin.currentScene) return null
+  // In layout mode, check layoutWidgetBounds first
+  if (dimWin.currentScene.layoutMode === 'layout') {
+    return dimWin.layoutWidgetBounds.get(widgetId) ?? null
+  }
   const entry = dimWin.currentScene.meta.widgets.find((w) => w.id === widgetId)
   return entry?.bounds ?? null
 }
@@ -588,9 +593,9 @@ export function mountWebportal(
 
   portals.set(widgetInstanceId, portal)
 
-  // Calculate bounds
+  // Calculate bounds (accounting for current zoom/scale)
   const sceneBounds = dimWin.sceneWCV.getBounds()
-  const bounds = calculatePortalBounds(widgetBounds, sceneBounds)
+  const bounds = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
 
   // Create the first tab (content WCV)
   const tab = createTab(portal, dimWin, widget.manifest.url)
@@ -628,7 +633,8 @@ export function mountAllWebportals(dimWin: DimensionsWindow): void {
   for (const entry of dimWin.currentScene.meta.widgets) {
     const widget = dimWin.currentScene.widgets.get(entry.id)
     if (!widget || widget.manifest.type !== 'webportal') continue
-    mountWebportal(dimWin, entry.id, widget, entry.bounds)
+    const bounds = entry.bounds ?? { x: 0, y: 0, width: 400, height: 300 }
+    mountWebportal(dimWin, entry.id, widget, bounds)
   }
 }
 
@@ -650,6 +656,7 @@ export function repositionPortals(dimWin: DimensionsWindow): void {
   const rawBounds = dimWin.sceneWCV.getBounds()
   const scroll = sceneScrollOffsets.get(dimWin.id) || { scrollX: 0, scrollY: 0 }
   const sceneBounds: SceneBounds = { ...rawBounds, ...scroll }
+  const isLayoutMode = dimWin.currentScene.layoutMode === 'layout'
 
   for (const entry of dimWin.currentScene.meta.widgets) {
     const portal = portals.get(entry.id)
@@ -658,10 +665,27 @@ export function repositionPortals(dimWin: DimensionsWindow): void {
     const widget = dimWin.currentScene.widgets.get(entry.id)
     if (!widget || widget.manifest.type !== 'webportal') continue
 
-    const bounds = calculatePortalBounds(entry.bounds, sceneBounds)
+    let widgetBounds: Bounds
+    let scale: number
+
+    if (isLayoutMode) {
+      // In layout mode, use reported bounds from <dimensions-widget> placeholders
+      // These are already in scene-relative coordinates (from getBoundingClientRect)
+      const layoutBounds = dimWin.layoutWidgetBounds.get(entry.id)
+      if (!layoutBounds) continue
+      // Layout bounds are already in screen-relative coords from the scene WCV,
+      // so we pass them directly with scale=1 (zoom already applied in CSS)
+      widgetBounds = layoutBounds
+      scale = 1 // bounds already account for zoom via CSS transform
+    } else {
+      // Canvas mode: use meta.json bounds, apply totalScale
+      widgetBounds = entry.bounds ?? { x: 0, y: 0, width: 400, height: 300 }
+      scale = dimWin.totalScale
+    }
+
+    const bounds = calculatePortalBounds(widgetBounds, sceneBounds, scale)
 
     if (bounds.hidden) {
-      // Too small — hide by moving offscreen
       const offscreen = { x: -9999, y: -9999, width: 0, height: 0 }
       portal.chromeWCV.setBounds(offscreen)
       const activeTab = portal.tabs.get(portal.activeTabId)

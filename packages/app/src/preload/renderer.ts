@@ -21,6 +21,7 @@ const INVOKE_CHANNELS = new Set([
   'create-scene',
   'create-dimension',
   'update-panel-widths',
+  'set-scale-mode',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -43,6 +44,9 @@ const RECEIVE_CHANNELS = new Set([
   'open-settings',
   'scene-changed',
   'scene-sidebar',
+  'scale-mode-changed',
+  'zoom-changed',
+  'scene-updated',
 ])
 
 // Sanitize data crossing the bridge
@@ -157,5 +161,21 @@ contextBridge.exposeInMainWorld('dimensions', {
   },
   onSceneSidebarChange: (cb: (open: boolean) => void) => {
     ipcRenderer.on('scene-sidebar', (_event, open) => cb(open))
+  },
+
+  // Scale mode
+  setScaleMode: (mode: string) => ipcRenderer.invoke('set-scale-mode', mode),
+  onScaleModeChange: (cb: (mode: string) => void) => {
+    ipcRenderer.on('scale-mode-changed', (_event, mode) => cb(mode))
+  },
+
+  // Zoom
+  onZoomChange: (cb: (zoom: number) => void) => {
+    ipcRenderer.on('zoom-changed', (_event, zoom) => cb(zoom))
+  },
+
+  // Scene updated (meta change outside edit mode)
+  onSceneUpdated: (cb: (scene: any) => void) => {
+    ipcRenderer.on('scene-updated', (_event, scene) => cb(sanitize(scene) as any))
   },
 })

@@ -11,12 +11,15 @@ export function generateClaudeMd(scene: SceneState): void {
   for (const entry of scene.meta.widgets) {
     const widget = scene.widgets.get(entry.id)
     if (!widget) continue
-    const { x, y, width, height } = entry.bounds
+    const bounds = entry.bounds
+    const boundsStr = bounds
+      ? `at (${bounds.x}, ${bounds.y}) ${bounds.width}\u00d7${bounds.height}`
+      : '(no bounds — positioned by layout.html)'
     const caps = widget.manifest.capabilities.length > 0
       ? widget.manifest.capabilities.join(', ')
       : 'none'
     widgetLines.push(
-      `- **${widget.manifest.title}** (\`${entry.id}\`, type: ${widget.manifest.type}) at (${x}, ${y}) ${width}\u00d7${height}\n  - Capabilities: ${caps}`,
+      `- **${widget.manifest.title}** (\`${entry.id}\`, type: ${widget.manifest.type}) ${boundsStr}\n  - Capabilities: ${caps}`,
     )
   }
 
@@ -37,20 +40,45 @@ Current position: ${currentIndex + 1} of ${scene.dimensionMeta.scenes.length}
 `
   }
 
+  // Layout mode section
+  const viewport = scene.meta.viewport
+  const viewportStr = viewport ? `${viewport.width}×${viewport.height}` : '1920×1080 (default)'
+  let layoutSection = ''
+  if (scene.layoutMode === 'layout') {
+    layoutSection = `
+## Layout Mode: CSS Layout
+This scene uses **Layout mode** — widgets are positioned by \`layout.html\`, not by bounds in \`meta.json\`.
+- Edit \`layout.html\` to change widget positioning (flexbox, grid, percentages, media queries)
+- Use \`<dimensions-widget name="widget-type">\` to place widgets
+- Widget bounds in meta.json are optional (CSS drives positioning)
+- Drag/resize handles are disabled — edit layout.html directly
+`
+  } else {
+    layoutSection = `
+## Layout Mode: Canvas
+This scene uses **Canvas mode** — widgets are positioned by \`bounds\` in \`meta.json\`.
+**Viewport:** ${viewportStr} (design resolution)
+**Scale modes:** Fit (scales to fill window) or Original (1:1 pixels, scroll if needed)
+- Drag and resize widgets in edit mode
+- To switch to CSS Layout mode, create a \`layout.html\` file in the scene folder
+`
+  }
+
   const content = `# Dimensions Scene Context
 
 ## Scene: ${scene.meta.title}
 **ID:** ${scene.id}
 **Slug:** ${scene.slug}
 **Path:** ${scene.path}
-${dimensionSection}
+${dimensionSection}${layoutSection}
 ### Active Widgets
 ${widgetsSection}
 
 ## IMPORTANT: What Files to Edit
 
 **DO edit:**
-- \`meta.json\` — scene title, theme (background, accent), widget layout/bounds
+- \`meta.json\` — scene title, theme (background, accent), viewport, widget layout/bounds
+- \`layout.html\` — CSS layout template (Layout mode only; create to switch from Canvas to Layout)
 - \`widgets/<name>/src/index.html\` — widget source code (HTML/JS/CSS)
 - \`widgets/<name>/src/index.ts\` — widget TypeScript source
 - \`widgets/<name>/src/widget.manifest.json\` — widget capabilities, inputs, outputs
@@ -199,6 +227,41 @@ Widget instance IDs are ULIDs from meta.json, not the human-readable manifest ID
 \`\`\`
 
 Rules applied on dom-ready for matching domains. Multiple rules stack in order.
+
+## Layout Mode Reference
+
+### Canvas Mode (default — no layout.html)
+- Widgets positioned by \`bounds\` in \`meta.json\` (absolute pixels in design space)
+- \`viewport\` in \`meta.json\` defines design resolution (default: 1920×1080)
+- Scene scales to fit available space (Fit mode) or renders at exact pixels (Original mode)
+- Zoom with Cmd+/- or Ctrl+scroll
+
+### Layout Mode (layout.html exists)
+Create \`layout.html\` in the scene folder to use CSS-driven layout:
+
+\`\`\`html
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; height: 100vh;">
+  <dimensions-widget name="my-widget"></dimensions-widget>
+  <dimensions-widget name="another-widget"></dimensions-widget>
+</div>
+\`\`\`
+
+- \`<dimensions-widget name="widget-type">\` places a widget by its type name from the manifest
+- Full CSS freedom: flexbox, grid, percentages, media queries, vh/vw
+- Multiple instances of the same widget type are matched by order against meta.json entries
+- To switch back to Canvas mode, delete \`layout.html\`
+
+### Switching Modes
+- **Canvas → Layout:** Create \`layout.html\` in the scene folder
+- **Layout → Canvas:** Delete \`layout.html\` — reverts to Canvas with last-known bounds
+
+### Viewport (meta.json)
+\`\`\`json
+{
+  "viewport": { "width": 1920, "height": 1080 }
+}
+\`\`\`
+Sets the design resolution for Canvas mode. Ignored in Layout mode.
 `
 
   const outPath = path.join(scene.path, 'CLAUDE.md')

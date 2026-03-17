@@ -82,12 +82,31 @@ export default function App() {
 
     // Scene changed (navigation, sequential nav, etc.)
     window.dimensions.onSceneChanged((scene) => {
-      if (scene) setCurrentScene(scene)
+      if (scene) {
+        setCurrentScene(scene)
+        if (scene.layoutMode) useAppStore.getState().setLayoutMode(scene.layoutMode)
+        if (scene.scaleMode) useAppStore.getState().setScaleMode(scene.scaleMode)
+      }
+    })
+
+    // Scale mode and zoom changes from main process
+    window.dimensions.onScaleModeChange((mode: string) => {
+      if (mode === 'fit' || mode === 'original') {
+        useAppStore.getState().setScaleMode(mode)
+      }
+    })
+
+    window.dimensions.onZoomChange((zoom: number) => {
+      useAppStore.getState().setZoom(zoom)
     })
 
     // Load initial scene
     window.dimensions.getCurrentScene().then((scene) => {
-      if (scene) setCurrentScene(scene)
+      if (scene) {
+        setCurrentScene(scene)
+        if (scene?.layoutMode) useAppStore.getState().setLayoutMode(scene.layoutMode)
+        if (scene?.scaleMode) useAppStore.getState().setScaleMode(scene.scaleMode)
+      }
     })
   }, [])
 

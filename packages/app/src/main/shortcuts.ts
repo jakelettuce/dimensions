@@ -121,6 +121,33 @@ function handleFullscreen() {
   if (focused) focused.setFullScreen(!focused.isFullScreen())
 }
 
+function handleZoomIn() {
+  const dimWin = getFocusedDimWin()
+  if (!dimWin) return
+  dimWin.zoom = Math.min(3.0, dimWin.zoom * 1.1)
+  dimWin.sceneWCV.webContents.send('scene:zoom', dimWin.zoom)
+  dimWin.browserWindow.webContents.send('zoom-changed', dimWin.zoom)
+  repositionPortals(dimWin)
+}
+
+function handleZoomOut() {
+  const dimWin = getFocusedDimWin()
+  if (!dimWin) return
+  dimWin.zoom = Math.max(0.25, dimWin.zoom / 1.1)
+  dimWin.sceneWCV.webContents.send('scene:zoom', dimWin.zoom)
+  dimWin.browserWindow.webContents.send('zoom-changed', dimWin.zoom)
+  repositionPortals(dimWin)
+}
+
+function handleZoomReset() {
+  const dimWin = getFocusedDimWin()
+  if (!dimWin) return
+  dimWin.zoom = 1.0
+  dimWin.sceneWCV.webContents.send('scene:zoom', dimWin.zoom)
+  dimWin.browserWindow.webContents.send('zoom-changed', dimWin.zoom)
+  repositionPortals(dimWin)
+}
+
 let _db: Database | null = null
 
 function handleNewWindow() {
@@ -199,6 +226,10 @@ export function registerShortcuts(db: Database): void {
         { label: 'Navigate Forward', accelerator: 'CmdOrCtrl+]', click: handleNavForward },
         { type: 'separator' },
         { label: 'Toggle Fullscreen', accelerator: 'F11', click: handleFullscreen },
+        { type: 'separator' },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: handleZoomIn },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: handleZoomOut },
+        { label: 'Reset Zoom', accelerator: 'CmdOrCtrl+0', click: handleZoomReset },
         { type: 'separator' },
         { role: 'reload' as const },
         { role: 'toggleDevTools' as const },

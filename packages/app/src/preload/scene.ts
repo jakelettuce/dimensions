@@ -143,4 +143,19 @@ contextBridge.exposeInMainWorld('dimensionsScene', {
   reportScroll: (scrollX: number, scrollY: number) => {
     ipcRenderer.send('scene:scroll', scrollX, scrollY)
   },
+  reportScale: (scale: number) => {
+    ipcRenderer.send('scene:report-scale', scale)
+  },
+  reportZoomDelta: (delta: number) => {
+    ipcRenderer.send('scene:zoom-delta', delta)
+  },
+  reportWidgetBounds: (widgetId: string, bounds: { x: number; y: number; width: number; height: number }) => {
+    ipcRenderer.send('scene:widget-bounds', widgetId, bounds)
+  },
+  onScaleMode: (cb: (mode: string) => void) => {
+    ipcRenderer.on('scene:scale-mode', (_e, mode) => cb(mode))
+  },
+  onZoom: (cb: (zoom: number) => void) => {
+    ipcRenderer.on('scene:zoom', (_e, zoom) => cb(zoom))
+  },
 })

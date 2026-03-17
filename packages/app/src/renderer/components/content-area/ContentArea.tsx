@@ -2,7 +2,7 @@ import { useAppStore } from '@/stores/app-store'
 import { FilesView } from './FilesView'
 
 export function ContentArea() {
-  const { contentView, currentScene, selectedWidgetId } = useAppStore()
+  const { contentView, currentScene, selectedWidgetId, layoutMode } = useAppStore()
 
   if (contentView === 'files' && currentScene?.path) {
     const inDimension = !!currentScene.dimensionId
@@ -14,14 +14,16 @@ export function ContentArea() {
       ? currentScene.dimensionTitle || undefined
       : currentScene.title || undefined
 
+    // Default file depends on layout mode
+    let defaultFile = layoutMode === 'layout'
+      ? currentScene.path + '/layout.html'
+      : currentScene.path + '/meta.json'
+
     // If a widget is selected, open its source file
-    let defaultFile = currentScene.path + '/meta.json'
     if (selectedWidgetId && currentScene.widgets) {
       const widget = currentScene.widgets.find((w: any) => w.id === selectedWidgetId)
       if (widget?.manifestPath) {
-        // manifestPath is like "widgets/welcome/src/widget.manifest.json"
-        // We want "widgets/welcome/src/index.html"
-        const srcDir = widget.manifestPath.replace(/\/[^/]+$/, '') // strip filename
+        const srcDir = widget.manifestPath.replace(/\/[^/]+$/, '')
         defaultFile = currentScene.path + '/' + srcDir + '/index.html'
       }
     }

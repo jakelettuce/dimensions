@@ -45,6 +45,13 @@ export const WidgetManifestSchema = z.object({
   props: z.array(WidgetPropSchema).optional(),
 })
 
+// ── Viewport ──
+
+export const ViewportSchema = z.object({
+  width: z.number().min(1),
+  height: z.number().min(1),
+})
+
 // ── Bounds ──
 
 export const BoundsSchema = z.object({
@@ -63,7 +70,7 @@ export const WidgetEntrySchema = z.object({
   id: z.string(),           // ULID instance ID — unique even if same widget placed twice
   widgetType: z.string(),   // human-readable type from manifest (e.g. "test-widget")
   manifestPath: z.string(), // relative path to widget.manifest.json within the scene
-  bounds: BoundsSchema,
+  bounds: BoundsSchema.optional(),
   props: z.record(z.any()).optional(),
 })
 
@@ -74,6 +81,7 @@ export const SceneMetaSchema = z.object({
   title: z.string(),
   slug: z.string(),
   theme: ThemeSchema.optional(),
+  viewport: ViewportSchema.optional(),
   widgets: z.array(WidgetEntrySchema).default([]),
 })
 
@@ -109,6 +117,7 @@ export const PortalRuleSchema = z.object({
 
 // ── Inferred types ──
 
+export type Viewport = z.infer<typeof ViewportSchema>
 export type SceneMeta = z.infer<typeof SceneMetaSchema>
 export type WidgetManifest = z.infer<typeof WidgetManifestSchema>
 export type WidgetEntry = z.infer<typeof WidgetEntrySchema>
