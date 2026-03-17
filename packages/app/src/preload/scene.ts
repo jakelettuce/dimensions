@@ -140,4 +140,7 @@ contextBridge.exposeInMainWorld('dimensionsScene', {
   onSceneUpdate: (cb: (meta: unknown) => void) => {
     ipcRenderer.on('scene:update', (_e, meta) => cb(sanitize(meta)))
   },
+  reportScroll: (scrollX: number, scrollY: number) => {
+    ipcRenderer.send('scene:scroll', scrollX, scrollY)
+  },
 })

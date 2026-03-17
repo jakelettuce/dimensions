@@ -166,11 +166,12 @@ export function generateSceneHtml(scene: SceneState): string {
       }
 
       if (!bundleUrl) {
+        const isPortal = widget.manifest.type === 'webportal'
         return `<div class="widget-wrapper" data-widget-id="${entry.id}"
           style="left:${x}px;top:${y}px;width:${width}px;height:${height}px;">
           <div class="drag-handle"></div>
-          <div class="widget-placeholder">
-            ${widget.manifest.title} (not built)
+          <div class="widget-placeholder ${isPortal ? 'portal-placeholder' : ''}">
+            ${widget.manifest.title}${isPortal ? '' : ' (not built)'}
           </div>
           <div class="resize-handle"></div>
         </div>`
@@ -191,6 +192,14 @@ export function generateSceneHtml(scene: SceneState): string {
     })
     .join('\n    ')
 
+  // Calculate scene canvas size from widget extents
+  let maxRight = 0, maxBottom = 0
+  for (const entry of scene.meta.widgets) {
+    if (entry.widgetType === '_background') continue
+    maxRight = Math.max(maxRight, entry.bounds.x + entry.bounds.width + 20)
+    maxBottom = Math.max(maxBottom, entry.bounds.y + entry.bounds.height + 20)
+  }
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -202,14 +211,21 @@ export function generateSceneHtml(scene: SceneState): string {
     html, body {
       width: 100%;
       height: 100%;
-      overflow: auto;
+      overflow: hidden;
       background: ${theme.background};
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    .scene-container {
-      position: relative;
+    #scene-scroll {
       width: 100%;
       height: 100%;
+      overflow: auto;
+    }
+    .scene-container {
+      position: relative;
+      width: ${maxRight}px;
+      height: ${maxBottom}px;
+      min-width: 100%;
+      min-height: 100%;
     }
     .widget-wrapper {
       position: absolute;
@@ -273,11 +289,18 @@ export function generateSceneHtml(scene: SceneState): string {
       font-size: 12px;
       border-radius: 4px;
     }
+    .widget-placeholder.portal-placeholder {
+      background: #1a1a2e;
+      border-color: #334;
+      color: #88f;
+    }
   </style>
 </head>
 <body>
-  <div class="scene-container">
-    ${widgetFrames}
+  <div id="scene-scroll">
+    <div class="scene-container">
+      ${widgetFrames}
+    </div>
   </div>
   <script>
     // Scene runtime: handles hot-reload and edit mode messages from preload
@@ -298,6 +321,20 @@ export function generateSceneHtml(scene: SceneState): string {
           document.querySelectorAll('.widget-wrapper.selected').forEach(el => el.classList.remove('selected'));
         }
       });
+
+      // Report scroll position so portal WCVs track with content
+      var scroller = document.getElementById('scene-scroll');
+      if (scroller) {
+        var lastSX = 0, lastSY = 0;
+        scroller.addEventListener('scroll', function() {
+          var sx = scroller.scrollLeft, sy = scroller.scrollTop;
+          if (sx !== lastSX || sy !== lastSY) {
+            lastSX = sx;
+            lastSY = sy;
+            window.dimensionsScene.reportScroll(sx, sy);
+          }
+        }, { passive: true });
+      }
     }
 
     // ── Edit-mode: selection, drag, resize ──

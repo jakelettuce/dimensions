@@ -82,39 +82,85 @@ function acquireContentWCV(dimWin: DimensionsWindow): WebContentsView {
   return createContentWCV()
 }
 
+// ── Safe mouse event control ──
+
+function safeSetIgnoreMouseEvents(wcv: WebContentsView, ignore: boolean): void {
+  try {
+    // setIgnoreMouseEvents may be on the WCV itself (BaseView) not on webContents
+    if (typeof (wcv as any).setIgnoreMouseEvents === 'function') {
+      (wcv as any).setIgnoreMouseEvents(ignore)
+    }
+  } catch {}
+}
+
 // ── Bounds calculation ──
+
+interface SceneBounds {
+  x: number
+  y: number
+  width?: number
+  height?: number
+  scrollX?: number
+  scrollY?: number
+}
+
+const MIN_VISIBLE_SIZE = 40 // hide portal if smaller than this
 
 function calculatePortalBounds(
   widgetBounds: Bounds,
-  sceneWCVBounds: { x: number; y: number; width?: number; height?: number },
-): { chrome: Electron.Rectangle; content: Electron.Rectangle } {
-  const absX = Math.round(widgetBounds.x + sceneWCVBounds.x)
-  const absY = Math.round(widgetBounds.y + sceneWCVBounds.y)
+  scene: SceneBounds,
+): { chrome: Electron.Rectangle; content: Electron.Rectangle; hidden: boolean } {
+  const scrollX = scene.scrollX || 0
+  const scrollY = scene.scrollY || 0
+
+  // Widget position adjusted for scroll
+  let absX = Math.round(widgetBounds.x + scene.x - scrollX)
+  let absY = Math.round(widgetBounds.y + scene.y - scrollY)
   let width = Math.round(widgetBounds.width)
   let height = Math.round(widgetBounds.height)
 
-  // Clamp to scene WCV bounds so portals don't overflow into the editor panel
-  if (sceneWCVBounds.width != null) {
-    const maxRight = sceneWCVBounds.x + sceneWCVBounds.width
-    if (absX + width > maxRight) {
-      width = Math.max(0, maxRight - absX)
-    }
+  // Clamp left edge: if portal starts before scene left edge
+  if (absX < scene.x) {
+    const clip = scene.x - absX
+    width -= clip
+    absX = scene.x
   }
-  if (sceneWCVBounds.height != null) {
-    const maxBottom = sceneWCVBounds.y + sceneWCVBounds.height
-    if (absY + height > maxBottom) {
-      height = Math.max(0, maxBottom - absY)
+
+  // Clamp top edge
+  if (absY < scene.y) {
+    const clip = scene.y - absY
+    height -= clip
+    absY = scene.y
+  }
+
+  // Clamp right edge
+  if (scene.width != null) {
+    const maxRight = scene.x + scene.width
+    if (absX + width > maxRight) {
+      width = maxRight - absX
     }
   }
 
+  // Clamp bottom edge
+  if (scene.height != null) {
+    const maxBottom = scene.y + scene.height
+    if (absY + height > maxBottom) {
+      height = maxBottom - absY
+    }
+  }
+
+  // Hide if too small
+  const hidden = width < MIN_VISIBLE_SIZE || height < MIN_VISIBLE_SIZE
+
   return {
-    chrome: { x: absX, y: absY, width, height: CHROME_HEIGHT },
+    chrome: { x: absX, y: absY, width: Math.max(0, width), height: CHROME_HEIGHT },
     content: {
       x: absX,
       y: absY + CHROME_HEIGHT,
-      width,
+      width: Math.max(0, width),
       height: Math.max(0, height - CHROME_HEIGHT),
     },
+    hidden,
   }
 }
 
@@ -331,11 +377,6 @@ function createTab(
       const bounds = calculatePortalBounds(widgetBounds, sceneBounds)
       contentWCV.setBounds(bounds.content)
     }
-  }
-
-  // Freeze if in edit mode
-  if (dimWin.editMode) {
-    contentWCV.webContents.setIgnoreMouseEvents(true)
   }
 
   // Fire-and-forget load
@@ -576,11 +617,6 @@ export function mountWebportal(
   // Load the chrome HTML
   loadChromeWCV(chromeWCV, widgetInstanceId, dimWin)
 
-  // Freeze if in edit mode
-  if (dimWin.editMode) {
-    chromeWCV.webContents.setIgnoreMouseEvents(true)
-    tab.contentWCV.webContents.setIgnoreMouseEvents(true)
-  }
 }
 
 /**
@@ -600,10 +636,20 @@ export function mountAllWebportals(dimWin: DimensionsWindow): void {
  * Recalculate and apply bounds for all portals in a window.
  * Called when scene WCV bounds change (edit mode toggle, window resize).
  */
+// Store current scroll offset per window
+const sceneScrollOffsets = new Map<string, { scrollX: number; scrollY: number }>()
+
+export function setSceneScroll(dimWin: DimensionsWindow, scrollX: number, scrollY: number): void {
+  sceneScrollOffsets.set(dimWin.id, { scrollX, scrollY })
+  repositionPortals(dimWin)
+}
+
 export function repositionPortals(dimWin: DimensionsWindow): void {
   if (dimWin.browserWindow.isDestroyed() || !dimWin.currentScene) return
 
-  const sceneBounds = dimWin.sceneWCV.getBounds()
+  const rawBounds = dimWin.sceneWCV.getBounds()
+  const scroll = sceneScrollOffsets.get(dimWin.id) || { scrollX: 0, scrollY: 0 }
+  const sceneBounds: SceneBounds = { ...rawBounds, ...scroll }
 
   for (const entry of dimWin.currentScene.meta.widgets) {
     const portal = portals.get(entry.id)
@@ -614,13 +660,16 @@ export function repositionPortals(dimWin: DimensionsWindow): void {
 
     const bounds = calculatePortalBounds(entry.bounds, sceneBounds)
 
-    // Set chrome bounds
-    portal.chromeWCV.setBounds(bounds.chrome)
-
-    // Set active tab content bounds
-    const activeTab = portal.tabs.get(portal.activeTabId)
-    if (activeTab) {
-      activeTab.contentWCV.setBounds(bounds.content)
+    if (bounds.hidden) {
+      // Too small — hide by moving offscreen
+      const offscreen = { x: -9999, y: -9999, width: 0, height: 0 }
+      portal.chromeWCV.setBounds(offscreen)
+      const activeTab = portal.tabs.get(portal.activeTabId)
+      if (activeTab) activeTab.contentWCV.setBounds(offscreen)
+    } else {
+      portal.chromeWCV.setBounds(bounds.chrome)
+      const activeTab = portal.tabs.get(portal.activeTabId)
+      if (activeTab) activeTab.contentWCV.setBounds(bounds.content)
     }
   }
 }
@@ -691,26 +740,142 @@ export function destroyAllPortals(dimWin: DimensionsWindow): void {
   }
 }
 
+// JS + CSS injected into portal WCVs to block interaction and capture clicks
+const FREEZE_CSS = `
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    background: rgba(0,0,0,0.12);
+    cursor: default;
+  }
+`
+
+// JS that creates a click-capturing overlay. Posts message to Electron via IPC.
+function freezeJS(widgetId: string): string {
+  return `
+    (function() {
+      if (document.getElementById('__dim_freeze_overlay')) return;
+      var overlay = document.createElement('div');
+      overlay.id = '__dim_freeze_overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;cursor:default;';
+      overlay.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }, true);
+      overlay.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }, true);
+      document.documentElement.appendChild(overlay);
+    })();
+  `
+}
+
+const UNFREEZE_JS = `
+  (function() {
+    var el = document.getElementById('__dim_freeze_overlay');
+    if (el) el.remove();
+  })();
+`
+
+// Track freeze state per portal
+const frozenState = new Map<string, {
+  cssKeys: string[]
+  listeners: Array<() => void>
+}>()
+
+function injectFreeze(wc: Electron.WebContents, widgetId: string, cssKeys: string[]): void {
+  if (wc.isDestroyed()) return
+  wc.insertCSS(FREEZE_CSS).then((key) => cssKeys.push(key)).catch(() => {})
+  wc.executeJavaScript(freezeJS(widgetId)).catch(() => {})
+}
+
+function removeFreeze(wc: Electron.WebContents, cssKeys: string[]): void {
+  if (wc.isDestroyed()) return
+  for (const key of cssKeys) {
+    wc.removeInsertedCSS(key).catch(() => {})
+  }
+  wc.executeJavaScript(UNFREEZE_JS).catch(() => {})
+}
+
 /**
  * Freeze or unfreeze all portal WCVs for a window (used during edit mode).
+ * Freeze: inject overlay div that blocks ALL mouse events + dim CSS.
+ * Click on frozen portal sends widget:select via IPC for selection.
+ * Re-injects on navigation so new pages are also frozen.
  */
 export function freezePortals(dimWin: DimensionsWindow, freeze: boolean): void {
-  if (!dimWin.currentScene) return
+  if (!dimWin.currentScene || dimWin.browserWindow.isDestroyed()) return
 
   for (const entry of dimWin.currentScene.meta.widgets) {
     const portal = portals.get(entry.id)
     if (!portal) continue
+    const widgetId = entry.id
 
-    // Freeze chrome WCV
-    try {
-      portal.chromeWCV.webContents.setIgnoreMouseEvents(freeze)
-    } catch {}
+    if (freeze) {
+      const cssKeys: string[] = []
+      const listeners: Array<() => void> = []
 
-    // Freeze all tab content WCVs
-    for (const [, tab] of portal.tabs) {
-      try {
-        tab.contentWCV.webContents.setIgnoreMouseEvents(freeze)
-      } catch {}
+      // Freeze chrome
+      injectFreeze(portal.chromeWCV.webContents, widgetId, cssKeys)
+
+      // Freeze all tab content + listen for navigation to re-freeze
+      for (const [, tab] of portal.tabs) {
+        const contentWC = tab.contentWCV.webContents
+        injectFreeze(contentWC, widgetId, cssKeys)
+
+        const navHandler = () => {
+          if (dimWin.editMode) {
+            // Small delay for page to load before injecting
+            setTimeout(() => injectFreeze(contentWC, widgetId, cssKeys), 200)
+          }
+        }
+        if (!contentWC.isDestroyed()) {
+          contentWC.on('did-finish-load', navHandler)
+          listeners.push(() => { try { contentWC.off('did-finish-load', navHandler) } catch {} })
+        }
+      }
+
+      // Listen for clicks on portal WCVs to select the widget
+      // Use webContents 'ipc-message' with a custom channel injected via the overlay
+      // Simpler: use webContents.on('input-event') — not available
+      // Simplest: the overlay blocks interaction. For selection, use the chrome WCV's
+      // did-start-navigation (user clicked a link) as a proxy, BUT we block navigation.
+      // Actually: just send the select from the main process when any portal WCV gets focus.
+      const focusHandler = () => {
+        if (dimWin.editMode && !dimWin.browserWindow.isDestroyed()) {
+          dimWin.browserWindow.webContents.send('widget:select', widgetId)
+        }
+      }
+      const chromeWC = portal.chromeWCV.webContents
+      if (!chromeWC.isDestroyed()) {
+        chromeWC.on('focus', focusHandler)
+        listeners.push(() => { try { chromeWC.off('focus', focusHandler) } catch {} })
+      }
+      for (const [, tab] of portal.tabs) {
+        const contentWC = tab.contentWCV.webContents
+        if (!contentWC.isDestroyed()) {
+          contentWC.on('focus', focusHandler)
+          listeners.push(() => { try { contentWC.off('focus', focusHandler) } catch {} })
+        }
+      }
+
+      frozenState.set(widgetId, { cssKeys, listeners })
+    } else {
+      const state = frozenState.get(widgetId)
+      if (state) {
+        for (const cleanup of state.listeners) cleanup()
+
+        removeFreeze(portal.chromeWCV.webContents, state.cssKeys)
+        for (const [, tab] of portal.tabs) {
+          removeFreeze(tab.contentWCV.webContents, state.cssKeys)
+        }
+
+        frozenState.delete(widgetId)
+      }
     }
   }
 }

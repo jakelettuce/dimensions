@@ -12,7 +12,7 @@ import { watchScene, stopWatching } from './watcher'
 import { sanitizeIpcData } from './ipc-safety'
 import { buildWidget } from './builder'
 import { destroyTerminalsForWindow } from './terminal'
-import { repositionPortals, freezePortals, mountAllWebportals, destroyAllPortals } from './webportal-manager'
+import { repositionPortals, freezePortals, mountAllWebportals, destroyAllPortals, setSceneScroll } from './webportal-manager'
 import { generateClaudeMd } from './claude-md'
 import { resolveRoute } from './protocol'
 import type { Database } from 'sql.js'
@@ -255,6 +255,17 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
       // Mount webportal widgets after scene loads
       mountAllWebportals(dimWin)
 
+      // If in edit mode, freeze the newly mounted portals
+      if (dimWin.editMode) {
+        freezePortals(dimWin, true)
+        // Also tell the new scene HTML it's in edit mode
+        dimWin.sceneWCV.webContents.once('did-finish-load', () => {
+          if (dimWin.editMode && !dimWin.sceneWCV.webContents.isDestroyed()) {
+            dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
+          }
+        })
+      }
+
       // Generate CLAUDE.md for Claude Code context
       if (dimWin.currentScene) {
         generateClaudeMd(dimWin.currentScene)
@@ -479,5 +490,12 @@ export function registerWindowIpcHandlers(): void {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
     return toggleEditMode(dimWin)
+  })
+
+  // Scene scroll — reposition portals to track scroll position
+  ipcMain.on('scene:scroll', (event, scrollX: unknown, scrollY: unknown) => {
+    if (typeof scrollX !== 'number' || typeof scrollY !== 'number') return
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (dimWin) setSceneScroll(dimWin, scrollX, scrollY)
   })
 }
