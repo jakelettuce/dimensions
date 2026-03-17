@@ -18,6 +18,8 @@ const INVOKE_CHANNELS = new Set([
   'destroy-terminal',
   'palette-close',
   'toggle-wcv-visibility',
+  'create-scene',
+  'create-dimension',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -36,6 +38,8 @@ const RECEIVE_CHANNELS = new Set([
   'navigate-forward',
   'toggle-content-view',
   'focus-terminal',
+  'open-new-scene-prompt',
+  'open-settings',
 ])
 
 // Sanitize data crossing the bridge
@@ -101,6 +105,10 @@ contextBridge.exposeInMainWorld('dimensions', {
     ipcRenderer.removeAllListeners(`terminal-output:${id}`)
   },
 
+  // Scene & dimension creation
+  createScene: (title: string, dimensionPath?: string) => ipcRenderer.invoke('create-scene', title, dimensionPath),
+  createDimension: (title: string) => ipcRenderer.invoke('create-dimension', title),
+
   // Palette close (restore scene WCV)
   paletteClose: () => ipcRenderer.invoke('palette-close'),
 
@@ -130,5 +138,11 @@ contextBridge.exposeInMainWorld('dimensions', {
   },
   onFocusTerminal: (cb: () => void) => {
     ipcRenderer.on('focus-terminal', () => cb())
+  },
+  onOpenNewScenePrompt: (cb: () => void) => {
+    ipcRenderer.on('open-new-scene-prompt', () => cb())
+  },
+  onOpenSettings: (cb: () => void) => {
+    ipcRenderer.on('open-settings', () => cb())
   },
 })

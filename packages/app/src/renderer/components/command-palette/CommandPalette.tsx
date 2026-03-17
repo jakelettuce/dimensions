@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import { cn } from '@/lib/utils'
-import { Search, Zap, ArrowRight, FileText, Layers } from 'lucide-react'
+import { Search, Zap, ArrowRight, FileText, Layers, Plus } from 'lucide-react'
 
 interface SceneResult {
   id: string
@@ -34,11 +34,34 @@ export function CommandPalette() {
   const [scenes, setScenes] = useState<SceneResult[]>([])
   const [dimensions, setDimensions] = useState<DimensionResult[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [mode, setMode] = useState<'search' | 'input'>('search')
+  const [inputAction, setInputAction] = useState<'new-scene' | 'new-dimension' | null>(null)
+  const [inputValue, setInputValue] = useState('')
 
   const handleClose = useCallback(() => {
     closePalette()
     window.dimensions.paletteClose()
   }, [closePalette])
+
+  const handleInputSubmit = useCallback(async () => {
+    const name = inputValue.trim()
+    if (!name) return
+
+    if (inputAction === 'new-scene') {
+      const result = await window.dimensions.createScene(name)
+      if ('scenePath' in result) {
+        // Navigate to the newly created scene
+        await window.dimensions.navigateTo(`dimensions://scene/${encodeURIComponent(name)}`)
+      }
+    } else if (inputAction === 'new-dimension') {
+      const result = await window.dimensions.createDimension(name)
+      if ('dimensionPath' in result) {
+        await window.dimensions.navigateTo(`dimensions://dimension/${encodeURIComponent(name)}`)
+      }
+    }
+
+    handleClose()
+  }, [inputValue, inputAction, handleClose])
 
   // Load scenes when palette opens
   useEffect(() => {
@@ -47,10 +70,20 @@ export function CommandPalette() {
       setScenes([])
       setDimensions([])
       setSelectedIndex(0)
+      setMode('search')
+      setInputAction(null)
+      setInputValue('')
       return
     }
 
     setTimeout(() => inputRef.current?.focus(), 50)
+
+    // Listen for Cmd+T new scene prompt from main process
+    window.dimensions.onOpenNewScenePrompt(() => {
+      setMode('input')
+      setInputAction('new-scene')
+      setInputValue('')
+    })
 
     window.dimensions.listScenes().then((result: SceneResult[]) => {
       if (Array.isArray(result)) {
@@ -87,9 +120,11 @@ export function CommandPalette() {
       kind: 'action' as const,
       title: 'New Scene',
       subtitle: 'Create a new scene',
+      shortcut: '⌘T',
       onSelect: () => {
-        // placeholder
-        handleClose()
+        setMode('input')
+        setInputAction('new-scene')
+        setInputValue('')
       },
     },
     {
@@ -98,8 +133,9 @@ export function CommandPalette() {
       title: 'New Dimension',
       subtitle: 'Create a new dimension',
       onSelect: () => {
-        // placeholder
-        handleClose()
+        setMode('input')
+        setInputAction('new-dimension')
+        setInputValue('')
       },
     },
     {
@@ -196,6 +232,13 @@ export function CommandPalette() {
     [filteredActions, filteredDimensions, filteredScenes],
   )
 
+  // Refocus input when mode changes
+  useEffect(() => {
+    if (paletteOpen) {
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
+  }, [mode, paletteOpen])
+
   // Reset selection when items change
   useEffect(() => {
     setSelectedIndex(0)
@@ -215,6 +258,22 @@ export function CommandPalette() {
     if (!paletteOpen) return
 
     const handler = (e: KeyboardEvent) => {
+      if (mode === 'input') {
+        switch (e.key) {
+          case 'Escape':
+            e.preventDefault()
+            setMode('search')
+            setInputAction(null)
+            setInputValue('')
+            break
+          case 'Enter':
+            e.preventDefault()
+            handleInputSubmit()
+            break
+        }
+        return
+      }
+
       switch (e.key) {
         case 'Escape':
           handleClose()
@@ -240,7 +299,7 @@ export function CommandPalette() {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [paletteOpen, handleClose, allItems, selectedIndex])
+  }, [paletteOpen, handleClose, allItems, selectedIndex, mode, handleInputSubmit])
 
   if (!paletteOpen) return null
 
@@ -270,30 +329,53 @@ export function CommandPalette() {
           'shadow-[var(--shadow-lg)]',
         )}
       >
-        {/* Search input */}
+        {/* Search / Input header */}
         <div
           className={cn(
             'flex items-center gap-[var(--space-md)] px-[var(--space-lg)]',
             'border-b border-[var(--color-border)] shrink-0',
           )}
         >
-          <Search size={16} className="text-[var(--color-text-muted)] shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search scenes, dimensions, actions..."
-            className={cn(
-              'flex-1 h-12 bg-transparent border-none outline-none',
-              'text-[var(--text-base)] text-[var(--color-text-primary)]',
-              'placeholder:text-[var(--color-text-muted)]',
-            )}
-          />
+          {mode === 'input' ? (
+            <>
+              <Plus size={16} className="text-[var(--color-accent)] shrink-0" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder={inputAction === 'new-scene' ? 'Enter scene name...' : 'Enter dimension name...'}
+                className={cn(
+                  'flex-1 h-12 bg-transparent border-none outline-none',
+                  'text-[var(--text-base)] text-[var(--color-text-primary)]',
+                  'placeholder:text-[var(--color-text-muted)]',
+                )}
+              />
+              <span className="text-[var(--text-xs)] text-[var(--color-text-muted)] shrink-0">
+                Enter to create &middot; Esc to cancel
+              </span>
+            </>
+          ) : (
+            <>
+              <Search size={16} className="text-[var(--color-text-muted)] shrink-0" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search scenes, dimensions, actions..."
+                className={cn(
+                  'flex-1 h-12 bg-transparent border-none outline-none',
+                  'text-[var(--text-base)] text-[var(--color-text-primary)]',
+                  'placeholder:text-[var(--color-text-muted)]',
+                )}
+              />
+            </>
+          )}
         </div>
 
-        {/* Results list */}
-        <div ref={listRef} className="overflow-y-auto p-[var(--space-sm)]">
+        {/* Results list (hidden in input mode) */}
+        <div ref={listRef} className={cn('overflow-y-auto p-[var(--space-sm)]', mode === 'input' && 'hidden')}>
           {allItems.length === 0 && (
             <p
               className={cn(

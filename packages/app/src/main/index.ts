@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
   registerTerminalIpcHandlers()
   registerPortalIpcHandlers()
   registerFileOperationHandlers()
-  registerGlobalShortcuts()
+  registerGlobalShortcuts(db)
 
   // Register capability system
   registerCapabilities(

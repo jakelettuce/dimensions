@@ -3,6 +3,8 @@ import type { CapabilityModule, CapabilityContext } from './index'
 import { assertCapability } from './index'
 import { persistDb } from '../database'
 import { resolveRoute } from '../protocol'
+import { assertPathWithin } from '../ipc-safety'
+import { DIMENSIONS_DIR } from '../constants'
 import { loadDimensionMeta } from '../scene-manager'
 import { loadSceneIntoWindow, cleanupPortalsForWindow } from '../window-manager'
 import { destroyTerminalsForWindow } from '../terminal'
@@ -193,6 +195,7 @@ export const navigateCapability: CapabilityModule = {
 
       const nextSlug = dimMeta.scenes[currentIndex + 1]
       const nextScenePath = path.join(scene.dimensionPath, nextSlug)
+      assertPathWithin(nextScenePath, DIMENSIONS_DIR)
 
       const dimWin = ctx.getWindow(widgetId)
       if (!dimWin || dimWin.browserWindow.isDestroyed()) return { error: 'window_not_found' }
@@ -232,6 +235,7 @@ export const navigateCapability: CapabilityModule = {
 
       const prevSlug = dimMeta.scenes[currentIndex - 1]
       const prevScenePath = path.join(scene.dimensionPath, prevSlug)
+      assertPathWithin(prevScenePath, DIMENSIONS_DIR)
 
       const dimWin = ctx.getWindow(widgetId)
       if (!dimWin || dimWin.browserWindow.isDestroyed()) return { error: 'window_not_found' }

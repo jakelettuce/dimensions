@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { ulid } from 'ulid'
 import { SceneMetaSchema, WidgetManifestSchema, ConnectionsFileSchema, DimensionMetaSchema } from './schemas'
 import type { SceneMeta, WidgetManifest, Connection, DimensionMeta, Theme } from './schemas'
 import { DIMENSIONS_DIR } from './constants'
@@ -417,7 +418,7 @@ export function ensureHomeScene(homePath: string): void {
 
   const metaPath = path.join(homePath, 'meta.json')
   if (!fs.existsSync(metaPath)) {
-    const { ulid } = require('ulid')
+    // ulid imported at top level
     const meta: SceneMeta = {
       id: ulid(),
       title: 'Home',
@@ -439,7 +440,7 @@ export function ensureHomeScene(homePath: string): void {
       const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
       const hasBackground = raw.widgets?.some((w: any) => w.widgetType === '_background')
       if (!hasBackground) {
-        const { ulid } = require('ulid')
+        // ulid imported at top level
         if (!raw.widgets) raw.widgets = []
         raw.widgets.unshift({
           id: ulid(),
@@ -453,8 +454,118 @@ export function ensureHomeScene(homePath: string): void {
   }
 }
 
+// ── Slug & creation helpers ──
+
+/** Sanitize title to URL-safe slug */
+export function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    || 'untitled'
+}
+
+/** Ensure slug doesn't conflict with existing folders */
+function uniqueSlug(baseSlug: string, parentDir: string): string {
+  let slug = baseSlug
+  let counter = 1
+  while (fs.existsSync(path.join(parentDir, slug))) {
+    slug = `${baseSlug}-${counter}`
+    counter++
+  }
+  return slug
+}
+
+/**
+ * Create a new scene on disk with meta.json, connections.json, and _background widget.
+ * Returns the absolute path to the new scene folder.
+ */
+export function createScene(title: string, parentDir?: string): string {
+  const dir = parentDir || DIMENSIONS_DIR
+  const slug = uniqueSlug(slugify(title), dir)
+  const scenePath = path.join(dir, slug)
+
+  fs.mkdirSync(scenePath, { recursive: true })
+  fs.mkdirSync(path.join(scenePath, 'widgets'), { recursive: true })
+
+  // Ensure _background widget files exist
+  ensureBackgroundWidget(scenePath)
+
+  // Create meta.json with _background widget entry
+  const meta: SceneMeta = {
+    id: ulid(),
+    title,
+    slug,
+    theme: { background: '#0a0a0a', accent: '#7c3aed' },
+    widgets: [
+      {
+        id: ulid(),
+        widgetType: '_background',
+        manifestPath: 'widgets/_background/src/widget.manifest.json',
+        bounds: { x: 0, y: 0, width: 4000, height: 4000 },
+      },
+    ],
+  }
+  fs.writeFileSync(path.join(scenePath, 'meta.json'), JSON.stringify(meta, null, 2), 'utf-8')
+
+  // Create empty connections.json
+  fs.writeFileSync(path.join(scenePath, 'connections.json'), '[]', 'utf-8')
+
+  return scenePath
+}
+
+/**
+ * Create a new dimension on disk with dimension.json and a first "main" scene.
+ * Returns paths to both the dimension folder and the first scene folder.
+ */
+export function createDimension(title: string): { dimensionPath: string; firstScenePath: string } {
+  const slug = uniqueSlug(slugify(title), DIMENSIONS_DIR)
+  const dimPath = path.join(DIMENSIONS_DIR, slug)
+  fs.mkdirSync(dimPath, { recursive: true })
+
+  // Create the first scene inside the dimension
+  const firstSceneSlug = 'main'
+  const scenePath = path.join(dimPath, firstSceneSlug)
+  fs.mkdirSync(path.join(scenePath, 'widgets'), { recursive: true })
+
+  ensureBackgroundWidget(scenePath)
+
+  const sceneMeta: SceneMeta = {
+    id: ulid(),
+    title,
+    slug: firstSceneSlug,
+    theme: {},
+    widgets: [
+      {
+        id: ulid(),
+        widgetType: '_background',
+        manifestPath: 'widgets/_background/src/widget.manifest.json',
+        bounds: { x: 0, y: 0, width: 4000, height: 4000 },
+      },
+    ],
+  }
+  fs.writeFileSync(path.join(scenePath, 'meta.json'), JSON.stringify(sceneMeta, null, 2), 'utf-8')
+  fs.writeFileSync(path.join(scenePath, 'connections.json'), '[]', 'utf-8')
+
+  // Create dimension.json
+  const dimMeta = {
+    id: ulid(),
+    title,
+    slug,
+    scenes: [firstSceneSlug],
+    entryScene: firstSceneSlug,
+    theme: { background: '#0a0a0a', accent: '#7c3aed' },
+    sharedEnvKeys: [],
+  }
+  fs.writeFileSync(path.join(dimPath, 'dimension.json'), JSON.stringify(dimMeta, null, 2), 'utf-8')
+
+  return { dimensionPath: dimPath, firstScenePath: scenePath }
+}
+
 // Create the _background widget with a default solid color
-function ensureBackgroundWidget(scenePath: string): void {
+export function ensureBackgroundWidget(scenePath: string): void {
   const bgDir = path.join(scenePath, 'widgets', '_background', 'src')
   if (fs.existsSync(path.join(bgDir, 'widget.manifest.json'))) return
 

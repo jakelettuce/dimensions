@@ -6,7 +6,7 @@ import { assertPathWithin } from './ipc-safety'
 import { findWindowByWebContentsId } from './window-manager'
 import { buildWidget, resolveWidgetSrcDir, resolveWidgetId } from './builder'
 import { generateClaudeMd } from './claude-md'
-import { loadSceneFromDisk } from './scene-manager'
+import { loadSceneFromDisk, createScene, createDimension } from './scene-manager'
 import { sanitizeIpcData } from './ipc-safety'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
@@ -209,6 +209,42 @@ export function registerFileOperationHandlers(): void {
       }
 
       return { success: true }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // ── create-scene ──
+  ipcMain.handle('create-scene', (_event, title: unknown, dimensionPath?: unknown) => {
+    if (typeof title !== 'string' || !title.trim()) return { error: 'invalid_title' }
+    const parent = typeof dimensionPath === 'string' ? dimensionPath : undefined
+    if (parent) assertPathWithin(parent, DIMENSIONS_DIR)
+    try {
+      const scenePath = createScene(title.trim(), parent)
+      // If inside a dimension, add to dimension.json scenes array
+      if (parent) {
+        const dimJsonPath = path.join(parent, 'dimension.json')
+        if (fs.existsSync(dimJsonPath)) {
+          const raw = JSON.parse(fs.readFileSync(dimJsonPath, 'utf-8'))
+          const slug = path.basename(scenePath)
+          if (!raw.scenes.includes(slug)) {
+            raw.scenes.push(slug)
+            fs.writeFileSync(dimJsonPath, JSON.stringify(raw, null, 2), 'utf-8')
+          }
+        }
+      }
+      return { scenePath }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // ── create-dimension ──
+  ipcMain.handle('create-dimension', (_event, title: unknown) => {
+    if (typeof title !== 'string' || !title.trim()) return { error: 'invalid_title' }
+    try {
+      const result = createDimension(title.trim())
+      return result
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) }
     }

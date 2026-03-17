@@ -201,11 +201,14 @@ function resolveDimension(dimensionPath: string, sceneSlug: string | undefined, 
     const sceneName = sceneSlug || dimMeta.entryScene || dimMeta.scenes[0]
     if (!sceneName) return { type: 'not_found' }
     if (!dimMeta.scenes.includes(sceneName)) return { type: 'not_found' }
+    const scenePath = path.join(dimensionPath, sceneName)
+    // Prevent path traversal via malicious scenes: ["../../etc"]
+    assertPathWithin(scenePath, DIMENSIONS_DIR)
     return {
       type: 'scene',
       dimensionId: dimMeta.id ?? null,
       dimensionPath: dimensionPath,
-      scenePath: path.join(dimensionPath, sceneName),
+      scenePath,
       widgetHash: hash,
     }
   } catch {

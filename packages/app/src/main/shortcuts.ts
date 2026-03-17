@@ -1,6 +1,7 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
-import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, type DimensionsWindow } from './window-manager'
+import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, createWindow, type DimensionsWindow } from './window-manager'
+import type { Database } from 'sql.js'
 import { loadSceneFromDisk, generateSceneHtml, writeSceneHtml } from './scene-manager'
 import { getPortal, mountAllWebportals, repositionPortals } from './webportal-manager'
 import { DIMENSIONS_DIR } from './constants'
@@ -68,7 +69,7 @@ function showAllWCVs(dimWin: DimensionsWindow): void {
   } catch {}
 }
 
-export function registerGlobalShortcuts(): void {
+export function registerGlobalShortcuts(db: Database): void {
   // Cmd+E: Toggle edit mode
   globalShortcut.register('CommandOrControl+E', () => {
     const dimWin = getFocusedDimWin()
@@ -120,6 +121,31 @@ export function registerGlobalShortcuts(): void {
     if (!dimWin.editMode) toggleEditMode(dimWin)
     dimWin.browserWindow.webContents.send('set-editor-tool', 'claude')
     dimWin.browserWindow.webContents.send('focus-terminal')
+  })
+
+  // Cmd+N: new window
+  globalShortcut.register('CommandOrControl+N', () => {
+    createWindow(db)
+  })
+
+  // Cmd+T: new scene prompt
+  globalShortcut.register('CommandOrControl+T', () => {
+    const dimWin = getFocusedDimWin()
+    if (!dimWin) return
+    dimWin.browserWindow.webContents.send('open-new-scene-prompt')
+  })
+
+  // Cmd+,: open settings
+  globalShortcut.register('CommandOrControl+,', () => {
+    const dimWin = getFocusedDimWin()
+    if (!dimWin) return
+    dimWin.browserWindow.webContents.send('open-settings')
+  })
+
+  // F11: toggle fullscreen
+  globalShortcut.register('F11', () => {
+    const focused = BrowserWindow.getFocusedWindow()
+    if (focused) focused.setFullScreen(!focused.isFullScreen())
   })
 
   // IPC: renderer signals palette closed → restore WCVs

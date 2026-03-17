@@ -27,6 +27,9 @@ declare global {
       resizeTerminal: (id: string, cols: number, rows: number) => void
       onTerminalOutput: (id: string, cb: (data: string) => void) => void
       removeTerminalOutputListener: (id: string) => void
+      // Scene & dimension creation
+      createScene: (title: string, dimensionPath?: string) => Promise<{ scenePath: string } | { error: string }>
+      createDimension: (title: string) => Promise<{ dimensionPath: string; firstScenePath: string } | { error: string }>
       // Global shortcut messages from main process
       onOpenPalette: (cb: () => void) => void
       onSetEditorTool: (cb: (tool: string) => void) => void
@@ -34,6 +37,8 @@ declare global {
       onNavigateForward: (cb: () => void) => void
       onToggleContentView: (cb: () => void) => void
       onFocusTerminal: (cb: () => void) => void
+      onOpenNewScenePrompt: (cb: () => void) => void
+      onOpenSettings: (cb: () => void) => void
     }
   }
 }
