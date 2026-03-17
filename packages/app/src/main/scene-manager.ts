@@ -252,8 +252,12 @@ export function generateSceneHtml(scene: SceneState): string {
     body.editing .widget-wrapper .resize-handle {
       display: block;
     }
-    /* Prevent iframe from stealing mouse events during drag/resize */
-    body.editing.interacting .widget-wrapper iframe {
+    /* In edit mode, iframes are non-interactive — clicks select the widget instead */
+    body.editing .widget-wrapper iframe {
+      pointer-events: none;
+    }
+    /* Background widget is always non-interactive in edit mode */
+    body.editing .background-widget {
       pointer-events: none;
     }
     .widget-placeholder {
@@ -386,6 +390,18 @@ export function generateSceneHtml(scene: SceneState): string {
       document.querySelectorAll('.widget-wrapper.selected').forEach(function(el) { el.classList.remove('selected'); });
       wrapper.classList.add('selected');
       postSdk('sdk:widget:select', [widgetId]);
+    });
+
+    // Click on background (scene container, not a widget) → select _background widget
+    document.querySelector('.scene-container').addEventListener('pointerdown', function(e) {
+      if (!document.body.classList.contains('editing')) return;
+      if (e.target.closest('.widget-wrapper')) return; // widget click handled above
+      // Find the _background widget ID
+      var bgIframe = document.querySelector('.background-widget');
+      if (bgIframe) {
+        document.querySelectorAll('.widget-wrapper.selected').forEach(function(el) { el.classList.remove('selected'); });
+        postSdk('sdk:widget:select', [bgIframe.dataset.widgetId]);
+      }
     });
   </script>
 </body>

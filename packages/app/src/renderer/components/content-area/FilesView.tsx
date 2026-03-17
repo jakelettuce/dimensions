@@ -172,27 +172,20 @@ export function FilesView({ scenePath, title, defaultFilePath }: FilesViewProps)
         ? openFilePath
         : defaultFilePath || null
 
-      // Auto-expand folders containing the file to open, plus widgets folders
-      for (const node of root) {
-        if (!node.isDirectory) continue
-        // Expand if this folder contains the target file
-        const shouldExpand = (fileToOpen && fileToOpen.startsWith(node.path + '/'))
-          || node.name === 'widgets'
-        if (shouldExpand) {
+      // Recursively expand all folders along the path to the target file
+      async function expandPathToFile(nodes: TreeNode[], targetPath: string): Promise<void> {
+        for (const node of nodes) {
+          if (!node.isDirectory) continue
+          if (!targetPath.startsWith(node.path + '/')) continue
           node.children = await loadChildren(node.path)
           node.expanded = true
           node.loaded = true
-          // Also expand nested widgets folders
-          if (node.children) {
-            for (const child of node.children) {
-              if (child.isDirectory && child.name === 'widgets') {
-                child.children = await loadChildren(child.path)
-                child.expanded = true
-                child.loaded = true
-              }
-            }
-          }
+          await expandPathToFile(node.children, targetPath)
         }
+      }
+
+      if (fileToOpen) {
+        await expandPathToFile(root, fileToOpen)
       }
 
       if (!cancelled) {
