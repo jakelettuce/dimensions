@@ -58,9 +58,9 @@ export function SceneSidebar() {
         'overflow-hidden',
       )}
     >
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-[var(--color-border)]">
-        <h2 className="text-[var(--text-sm)] font-semibold text-[var(--color-text-primary)]">
+      {/* macOS traffic light area — drag region, text below the window buttons */}
+      <div className="drag-region shrink-0 pt-[38px] px-4 pb-2">
+        <h2 className="text-[var(--text-sm)] font-semibold text-[var(--color-text-primary)] no-drag">
           Scenes
         </h2>
       </div>

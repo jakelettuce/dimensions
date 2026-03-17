@@ -1,28 +1,21 @@
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
-import { ChevronLeft, ChevronRight, Eye, Code } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export function TopBar() {
-  const { editMode, currentScene, contentView, setContentView } = useAppStore()
-
-  const handleToggleView = () => {
-    const newView = contentView === 'live' ? 'files' : 'live'
-    setContentView(newView)
-    // Tell main process to hide/show WCVs
-    window.dimensions.toggleWcvVisibility(newView === 'live')
-  }
+  const { editMode, currentScene, sceneSidebarOpen } = useAppStore()
 
   return (
     <div
       className={cn(
-        'drag-region flex items-center justify-between border-b px-[var(--space-lg)]',
+        'drag-region flex items-center justify-between border-b px-[var(--space-md)]',
         'h-[var(--topbar-height)] bg-[var(--color-bg-secondary)] border-[var(--color-border)]',
         'shrink-0',
       )}
     >
-      <div className="flex items-center gap-[var(--space-md)]">
-        {/* Traffic light spacer on macOS */}
-        <div className="w-[70px]" />
+      <div className="flex items-center gap-[var(--space-sm)]">
+        {/* Traffic light spacer — only when sidebar is closed (sidebar covers the buttons when open) */}
+        {!sceneSidebarOpen && <div className="w-[70px]" />}
 
         {/* Navigation buttons */}
         <div className="flex items-center gap-[var(--space-xs)] no-drag">
@@ -48,7 +41,7 @@ export function TopBar() {
           </button>
         </div>
 
-        {/* Scene title with dimension breadcrumb */}
+        {/* Breadcrumb */}
         <h1
           className={cn(
             'text-[var(--text-sm)] font-medium no-drag cursor-default',
@@ -68,55 +61,45 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-[var(--space-sm)] no-drag">
-        {/* Live / Files toggle */}
-        {editMode && (
-          <div
-            className={cn(
-              'flex items-center rounded-[var(--radius-md)] overflow-hidden',
-              'border border-[var(--color-border)]',
-            )}
-          >
-            <button
-              onClick={() => { if (contentView !== 'live') handleToggleView() }}
-              className={cn(
-                'flex items-center gap-1 px-[var(--space-sm)] py-1',
-                'text-[var(--text-xs)] font-medium transition-colors duration-[var(--duration-fast)]',
-                contentView === 'live'
-                  ? 'bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]'
-                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]',
-              )}
-            >
-              <Eye size={12} />
-              Live
-            </button>
-            <button
-              onClick={() => { if (contentView !== 'files') handleToggleView() }}
-              className={cn(
-                'flex items-center gap-1 px-[var(--space-sm)] py-1',
-                'text-[var(--text-xs)] font-medium transition-colors duration-[var(--duration-fast)]',
-                contentView === 'files'
-                  ? 'bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]'
-                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]',
-              )}
-            >
-              <Code size={12} />
-              Files
-            </button>
-          </div>
-        )}
-
-        {/* Mode indicator */}
-        <span
+        {/* Edit/Use mode toggle */}
+        <button
+          onClick={() => window.dimensions.toggleEditMode()}
           className={cn(
-            'rounded-[var(--radius-sm)] px-2 py-0.5',
-            'text-[var(--text-xs)] font-medium transition-colors duration-[var(--duration-fast)]',
+            'relative flex items-center w-[72px] h-[26px] rounded-full p-[2px] no-drag',
+            'transition-colors duration-300 ease-in-out cursor-pointer',
             editMode
-              ? 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)]'
-              : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]',
+              ? 'bg-[var(--color-accent)]'
+              : 'bg-[var(--color-bg-tertiary)]',
           )}
         >
-          {editMode ? 'Edit' : 'Use'}
-        </span>
+          <span
+            className={cn(
+              'absolute top-[2px] h-[22px] w-[34px] rounded-full shadow-sm',
+              'transition-all duration-300 ease-in-out',
+              editMode
+                ? 'left-[36px] bg-white'
+                : 'left-[2px] bg-[var(--color-text-primary)]',
+            )}
+          />
+          <span
+            className={cn(
+              'relative z-10 flex-1 text-center text-[10px] font-semibold leading-[22px]',
+              'transition-colors duration-300',
+              !editMode ? 'text-[var(--color-bg-primary)]' : 'text-white/70',
+            )}
+          >
+            Use
+          </span>
+          <span
+            className={cn(
+              'relative z-10 flex-1 text-center text-[10px] font-semibold leading-[22px]',
+              'transition-colors duration-300',
+              editMode ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]',
+            )}
+          >
+            Edit
+          </span>
+        </button>
       </div>
     </div>
   )

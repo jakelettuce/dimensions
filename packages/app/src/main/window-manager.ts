@@ -371,6 +371,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
 
 // Layout constants (must match renderer CSS vars)
 const TOPBAR_HEIGHT = 40
+const TOOLBAR_HEIGHT = 32
 const EDITOR_PANEL_WIDTH = 420
 const SCENE_SIDEBAR_WIDTH = 280
 
@@ -387,8 +388,10 @@ export function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
     w -= SCENE_SIDEBAR_WIDTH
   }
 
-  // Edit mode (right panel)
+  // Edit mode (toolbar + right panel)
   if (dimWin.editMode) {
+    y += TOOLBAR_HEIGHT
+    h -= TOOLBAR_HEIGHT
     w -= EDITOR_PANEL_WIDTH
   }
 

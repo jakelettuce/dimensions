@@ -6,6 +6,7 @@ import { EditorToolsPanel } from '@/components/editor-tools/EditorToolsPanel'
 import { ContentArea } from '@/components/content-area/ContentArea'
 import { CommandPalette } from '@/components/command-palette/CommandPalette'
 import { SceneSidebar } from '@/components/scene-sidebar/SceneSidebar'
+import { ToolBar } from '@/components/top-bar/ToolBar'
 import '@xterm/xterm/css/xterm.css'
 
 export default function App() {
@@ -86,17 +87,23 @@ export default function App() {
   }, [])
 
   return (
-    <div className={cn('flex h-full flex-col')}>
-      <TopBar />
+    <div className={cn('flex h-full')}>
+      {/* Scene sidebar — full height, leftmost */}
+      {sceneSidebarOpen && <SceneSidebar />}
 
-      <div className="flex flex-1 min-h-0">
-        {sceneSidebarOpen && <SceneSidebar />}
-        <div className="flex-1 relative">
-          <ContentArea />
-          <BuildStatusToast />
-        </div>
-        <div className={editMode ? '' : 'hidden'}>
-          <EditorToolsPanel />
+      {/* Main area (bars + content + editor) */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <TopBar />
+        {editMode && <ToolBar />}
+
+        <div className="flex flex-1 min-h-0">
+          <div className="flex-1 relative">
+            <ContentArea />
+            <BuildStatusToast />
+          </div>
+          <div className={editMode ? '' : 'hidden'}>
+            <EditorToolsPanel />
+          </div>
         </div>
       </div>
 
