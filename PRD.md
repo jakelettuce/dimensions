@@ -492,9 +492,13 @@ Validated with Zod on load. Invalid manifest = widget won't mount + clear error 
 
 ## 8. Edit Mode / Use Mode
 
+### Top Bar (always visible)
+
+The top bar is always visible in both edit and use mode. It shows the scene title, dimension breadcrumbs (if in a dimension), mode indicator, and navigation buttons. The scene WCV is always offset by the top bar height.
+
 ### Edit Mode (`Cmd+E`)
 
-App chrome visible. Scene enters editing state.
+Editor tools panel appears on the right. Scene enters editing state.
 
 - Widget drag/resize handles rendered by the scene
 - Webportal WCVs: `setIgnoreMouseEvents(true)` (visible but frozen)
@@ -502,12 +506,22 @@ App chrome visible. Scene enters editing state.
 - Content area: Live view OR Files view (Monaco editor)
 - `Cmd+K` command palette available
 
+### Scene Sidebar (`Cmd+S`)
+
+A left-side navigation panel for quickly switching between scenes. Works independently of edit mode — can be open in use mode or edit mode. Shows:
+- Current dimension title and ordered scene list (with current scene highlighted)
+- Standalone scenes
+- "New Scene" button
+
+The scene WCV and portal WCVs reposition when the sidebar toggles, using the same abstracted bounds calculation as edit mode. All four layout states compose: use mode alone, sidebar alone, edit mode alone, or both together.
+
 ### Use Mode (default)
 
-App chrome hidden. Scene fills the window. The scene defines all interaction — the app imposes nothing. Could be a static dashboard, an interactive workspace, a game, anything.
+Top bar remains visible. Editor tools panel hidden. Scene fills the remaining space. The scene defines all interaction — the app imposes nothing. Could be a dashboard, a workspace, a game, anything.
 
 - Webportal WCVs: fully interactive
-- `Cmd+E` to return to edit mode
+- `Cmd+E` to enter edit mode
+- `Cmd+S` to toggle scene sidebar
 - `Cmd+K` still available (palette overlays, WCVs hide)
 
 ---
@@ -612,7 +626,8 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 | Shortcut | Action |
 |---|---|
 | `Cmd+K` | Command palette |
-| `Cmd+E` | Toggle edit mode |
+| `Cmd+E` | Toggle edit mode (top bar + right editor panel) |
+| `Cmd+S` | Toggle scene sidebar (left panel — scene navigation) |
 | `Cmd+N` | New window |
 | `Cmd+T` | New scene |
 | `Cmd+[` / `Cmd+]` | Navigate back / forward |

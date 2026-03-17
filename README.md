@@ -88,9 +88,11 @@ Renderer (app chrome, trusted)
 
 ### Edit mode / Use mode
 
-**Use mode** (default): App chrome hidden. Scene fills the window. The scene defines all interaction — the app imposes nothing. Could be a dashboard, a workspace, a game, anything.
+The **top bar** is always visible — scene title, dimension breadcrumbs, navigation, and mode indicator.
 
-**Edit mode** (`Cmd+E`): App chrome appears — top bar with scene title and navigation, right panel with a Claude Code terminal (scoped to the scene folder) or a no-code properties panel. Widgets show drag/resize handles. Webportals freeze for interaction passthrough. All changes persist to `meta.json` on disk.
+**Use mode** (default): Scene fills the window below the top bar. The scene defines all interaction — the app imposes nothing. Could be a dashboard, a workspace, a game, anything.
+
+**Edit mode** (`Cmd+E`): Right panel appears with a Claude Code terminal (scoped to the scene folder) or a no-code properties panel. Widgets show drag/resize handles. Webportals freeze for interaction passthrough. All changes persist to `meta.json` on disk.
 
 ### Widget SDK
 
@@ -128,7 +130,8 @@ On first launch, the app creates `~/Dimensions/home/` with a starter scene. No s
 
 | Shortcut | Action |
 |---|---|
-| `Cmd+E` | Toggle edit mode |
+| `Cmd+E` | Toggle edit mode (top bar + right editor panel) |
+| `Cmd+S` | Toggle scene sidebar (left panel — scene navigation within dimensions) |
 | `Cmd+K` | Command palette |
 | `Cmd+1` / `Cmd+2` | Claude Code terminal / No-code panel |
 | `Cmd+[` / `Cmd+]` | Navigate back / forward |

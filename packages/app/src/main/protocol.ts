@@ -169,10 +169,30 @@ function routeToContent(contentPath: string, hash: string): SceneRoute {
           if (raw.id === identifier) {
             return resolveDimension(entryPath, parts[1], hash)
           }
+          // Also check scene IDs inside this dimension
+          const dimScenes: string[] = raw.scenes || []
+          for (const sceneSlug of dimScenes) {
+            const sceneMetaPath = path.join(entryPath, sceneSlug, 'meta.json')
+            if (!fs.existsSync(sceneMetaPath)) continue
+            try {
+              const sceneMeta = JSON.parse(fs.readFileSync(sceneMetaPath, 'utf-8'))
+              if (sceneMeta.id === identifier) {
+                const scenePath = path.join(entryPath, sceneSlug)
+                assertPathWithin(scenePath, DIMENSIONS_DIR)
+                return {
+                  type: 'scene',
+                  dimensionId: raw.id ?? null,
+                  dimensionPath: entryPath,
+                  scenePath,
+                  widgetHash: hash,
+                }
+              }
+            } catch {}
+          }
         } catch {}
       }
 
-      // Check scene ID match
+      // Check standalone scene ID match
       const sceneMeta = path.join(entryPath, 'meta.json')
       if (fs.existsSync(sceneMeta)) {
         try {

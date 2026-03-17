@@ -147,9 +147,9 @@ function DimensionGroup({
         {dimension.title}
       </div>
 
-      {/* Show scenes in dimension order */}
+      {/* Show scenes in dimension order — match by slug or title */}
       {dimension.scenes.map((sceneSlug) => {
-        const scene = scenes.find((s) => s.slug === sceneSlug)
+        const scene = scenes.find((s) => s.slug === sceneSlug || s.title.toLowerCase() === sceneSlug)
         if (!scene) return null
         const isEntry = dimension.scenes[0] === sceneSlug
         return (

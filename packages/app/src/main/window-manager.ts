@@ -379,7 +379,7 @@ export function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
 
   const [width, height] = dimWin.browserWindow.getContentSize()
 
-  let x = 0, y = 0, w = width, h = height
+  let x = 0, y = TOPBAR_HEIGHT, w = width, h = height - TOPBAR_HEIGHT
 
   // Scene sidebar (left side)
   if (dimWin.sceneSidebarOpen) {
@@ -387,10 +387,8 @@ export function updateSceneWCVBounds(dimWin: DimensionsWindow): void {
     w -= SCENE_SIDEBAR_WIDTH
   }
 
-  // Edit mode chrome (top + right)
+  // Edit mode (right panel)
   if (dimWin.editMode) {
-    y += TOPBAR_HEIGHT
-    h -= TOPBAR_HEIGHT
     w -= EDITOR_PANEL_WIDTH
   }
 

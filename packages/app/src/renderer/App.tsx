@@ -87,7 +87,7 @@ export default function App() {
 
   return (
     <div className={cn('flex h-full flex-col')}>
-      {editMode && <TopBar />}
+      <TopBar />
 
       <div className="flex flex-1 min-h-0">
         {sceneSidebarOpen && <SceneSidebar />}
