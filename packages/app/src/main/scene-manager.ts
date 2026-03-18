@@ -788,7 +788,7 @@ export function generateLayoutSceneHtml(scene: SceneState): string {
         class="background-widget"
         src="${bundleUrl}"
         sandbox="allow-scripts allow-same-origin"
-        style="position:fixed;left:0;top:0;width:100%;height:100%;border:none;z-index:-1;"
+        style="position:fixed;left:0;top:0;width:100%;height:100%;border:none;z-index:0;"
       ></iframe>`
     }
     break
@@ -813,6 +813,8 @@ export function generateLayoutSceneHtml(scene: SceneState): string {
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
     #scene-scroll {
+      position: relative;
+      z-index: 1;
       width: 100%;
       height: 100%;
       overflow: auto;

@@ -1021,7 +1021,9 @@ export function freezePortals(dimWin: DimensionsWindow, freeze: boolean): void {
 const DOWNLOAD_FOLDER_KEY = 'download_folder'
 
 function getDownloadFolder(): string {
-  return getSetting(DOWNLOAD_FOLDER_KEY) || app.getPath('downloads')
+  const saved = getSetting(DOWNLOAD_FOLDER_KEY)
+  if (saved && fs.existsSync(saved)) return saved
+  return app.getPath('downloads')
 }
 
 // ── Download confirmation IPC ──
@@ -1184,7 +1186,7 @@ export function registerDownloadIpcHandlers(): void {
     try {
       const urlObj = new URL(data.url)
       const pathParts = urlObj.pathname.split('/')
-      let filename = decodeURIComponent(pathParts[pathParts.length - 1] || 'download')
+      let filename = path.basename(decodeURIComponent(pathParts[pathParts.length - 1] || 'download'))
       if (!path.extname(filename)) filename += '.png'
       const tempFile = path.join(app.getPath('temp'), `dimensions-drag-${ulid()}-${filename}`)
 
