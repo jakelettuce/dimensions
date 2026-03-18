@@ -72,6 +72,13 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       PRIMARY KEY (widget_id, key)
     )`,
   },
+  {
+    version: 8,
+    sql: `CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )`,
+  },
 ]
 
 function ensureSchemaVersionTable(database: Database): void {
@@ -143,6 +150,21 @@ function persistDbSync(database: Database): void {
 export function getDb(): Database {
   if (!db) throw new Error('Database not initialized. Call initDatabase() first.')
   return db
+}
+
+// ── Settings helpers ──
+
+export function getSetting(key: string): string | null {
+  const database = getDb()
+  const result = database.exec('SELECT value FROM settings WHERE key = ?', [key])
+  if (result.length === 0 || result[0].values.length === 0) return null
+  return result[0].values[0][0] as string
+}
+
+export function setSetting(key: string, value: string): void {
+  const database = getDb()
+  database.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value])
+  persistDb()
 }
 
 export function closeDatabase(): void {

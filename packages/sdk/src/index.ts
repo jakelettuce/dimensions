@@ -21,10 +21,11 @@ export type {
   Connection,
   PortalRule,
   PortalState,
+  DroppedFile,
   DimensionsSDK,
 } from './types'
 
-import type { Bounds, ThemeVars, AssetInfo, SDKResponse, WSConnection, PortalState, DimensionsSDK } from './types'
+import type { Bounds, ThemeVars, AssetInfo, SDKResponse, WSConnection, PortalState, DroppedFile, DimensionsSDK } from './types'
 
 // ── Context injected by host ──
 
@@ -151,6 +152,19 @@ async function ensurePropsCache(): Promise<Record<string, any>> {
   propsCache = await call<Record<string, any>>('sdk:props:getAll')
   return propsCache
 }
+
+// ── Media drop subscriptions ──
+
+const mediaDropListeners: Array<(files: DroppedFile[]) => void> = []
+
+window.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'sdk-media-drop') return
+  if (mediaDropListeners.length > 0) {
+    for (const cb of mediaDropListeners) {
+      try { cb(event.data.files) } catch {}
+    }
+  }
+})
 
 // ── Widget shortcut subscriptions ──
 
@@ -318,6 +332,15 @@ export const sdk: DimensionsSDK = {
     onAnyChange: (cb: (props: Record<string, any>) => void) => {
       propAnyChangeListeners.push(cb)
     },
+  },
+
+  // media-drop — requires "media-drop" capability for receiving
+  media: {
+    onDrop: (cb: (files: DroppedFile[]) => void) => {
+      mediaDropListeners.push(cb)
+    },
+    importDrop: (file: DroppedFile) => call<string>('sdk:media:importDrop', file),
+    startDrag: (assetUrl: string) => call('sdk:media:startDrag', assetUrl),
   },
 
   // Widget shortcuts — declared in manifest, dispatched when widget is focused

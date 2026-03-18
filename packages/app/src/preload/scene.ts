@@ -49,6 +49,9 @@ const ALLOWED_SDK_CHANNELS = new Set([
   'sdk:portal:getState',
   // Props
   'sdk:props:getAll',
+  // Media drag & drop
+  'sdk:media:importDrop',
+  'sdk:media:startDrag',
 ])
 
 // Fire-and-forget channels (no response expected)

@@ -52,10 +52,13 @@ declare global {
       listMedia: (accept?: string[]) => Promise<any[]>
       deleteMedia: (filename: string) => Promise<any>
       // Downloads
-      acceptDownload: (downloadId: string) => Promise<any>
+      acceptDownload: (downloadId: string, filename?: string) => Promise<any>
+      acceptDownloadToMedia: (downloadId: string, filename?: string) => Promise<any>
       cancelDownload: (downloadId: string) => Promise<any>
+      getDownloadFolder: () => Promise<string>
+      chooseDownloadFolder: () => Promise<string | null>
       onDownloadConfirm: (cb: (data: { downloadId: string; filename: string; fileSize: number; sourceUrl: string; mimeType: string }) => void) => void
-      onDownloadComplete: (cb: (data: { downloadId: string; state: string; savePath: string | null; filename: string }) => void) => void
+      onDownloadComplete: (cb: (data: { downloadId: string; state: string; savePath: string | null; filename: string; mediaUrl?: string; savedToMedia?: boolean }) => void) => void
       onDownloadTimeout: (cb: (data: { downloadId: string }) => void) => void
       onWidgetPropsUpdated: (cb: (data: { widgetId: string; props: Record<string, any> }) => void) => void
       // Scale mode

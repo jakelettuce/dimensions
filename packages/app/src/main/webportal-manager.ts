@@ -1,9 +1,11 @@
-import { WebContentsView, ipcMain, shell, Menu, MenuItem, app } from 'electron'
+import { WebContentsView, BrowserWindow, ipcMain, shell, Menu, MenuItem, app, dialog } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { ulid } from 'ulid'
 import { SECURE_WEB_PREFERENCES, DIMENSIONS_DIR } from './constants'
 import { extractAndSaveStylesheets, applyPortalRules } from './css-injection'
+import { importMedia, getMimeType } from './media-library'
+import { getSetting, setSetting } from './database'
 import type { DimensionsWindow } from './window-manager'
 import type { WidgetState } from './scene-manager'
 import type { Bounds, WidgetManifest } from './schemas'
@@ -85,7 +87,16 @@ export interface PortalInstance {
 // ── Portal registry ──
 
 const portals = new Map<string, PortalInstance>()
-const pendingDownloads = new Map<string, Electron.DownloadItem>()
+type DownloadAction = 'pending' | 'downloads' | 'media' | 'cancelled'
+
+interface PendingDownload {
+  item: Electron.DownloadItem
+  tmpPath: string
+  action: DownloadAction
+  filename: string
+  mimeType: string
+}
+const pendingDownloads = new Map<string, PendingDownload>()
 
 export function getPortal(id: string): PortalInstance | undefined {
   return portals.get(id)
@@ -99,6 +110,8 @@ function createContentWCV(): WebContentsView {
   return new WebContentsView({
     webPreferences: {
       ...SECURE_WEB_PREFERENCES,
+      // NO preload — portal content WCVs are fully sandboxed.
+      // Media transfer uses the download confirmation modal (right-click → Save Image).
     },
   })
 }
@@ -367,7 +380,12 @@ function wireContentWCVEvents(
   })
 
   // ── Downloads: pause immediately, require user confirmation via modal ──
+  // CRITICAL: setSavePath must be called to prevent Electron's native save dialog.
+  // We set a temp path immediately, then either move it or cancel on user response.
   wc.session.on('will-download', (_event, item) => {
+    // Set a temp save path FIRST to suppress the native save dialog
+    const tmpPath = path.join(app.getPath('temp'), `dimensions-pending-${ulid()}-${item.getFilename()}`)
+    item.setSavePath(tmpPath)
     item.pause()
 
     const downloadId = ulid()
@@ -376,11 +394,12 @@ function wireContentWCVEvents(
     const sourceUrl = item.getURL()
     const mimeType = item.getMimeType()
 
-    pendingDownloads.set(downloadId, item)
+    pendingDownloads.set(downloadId, { item, tmpPath })
 
     if (dimWin.browserWindow.isDestroyed()) {
       item.cancel()
       pendingDownloads.delete(downloadId)
+      try { fs.unlinkSync(tmpPath) } catch {}
       return
     }
 
@@ -393,6 +412,7 @@ function wireContentWCVEvents(
       if (pendingDownloads.has(downloadId)) {
         item.cancel()
         pendingDownloads.delete(downloadId)
+        try { fs.unlinkSync(tmpPath) } catch {}
         if (!dimWin.browserWindow.isDestroyed()) {
           dimWin.browserWindow.webContents.send('download:timeout', { downloadId })
         }
@@ -993,41 +1013,154 @@ export function freezePortals(dimWin: DimensionsWindow, freeze: boolean): void {
   }
 }
 
+// ── Download folder preference (persisted in SQLite) ──
+
+const DOWNLOAD_FOLDER_KEY = 'download_folder'
+
+function getDownloadFolder(): string {
+  return getSetting(DOWNLOAD_FOLDER_KEY) || app.getPath('downloads')
+}
+
 // ── Download confirmation IPC ──
 
 export function registerDownloadIpcHandlers(): void {
-  ipcMain.handle('download:accept', (_event, downloadId: unknown) => {
-    if (typeof downloadId !== 'string') return { error: 'invalid_id' }
-    const item = pendingDownloads.get(downloadId)
-    if (!item) return { error: 'download_not_found' }
+  ipcMain.handle('download:get-folder', () => {
+    return getDownloadFolder()
+  })
 
-    const savePath = path.join(app.getPath('downloads'), item.getFilename())
-    item.setSavePath(savePath)
+  ipcMain.handle('download:choose-folder', async () => {
+    const focusedWin = BrowserWindow.getFocusedWindow()
+    if (!focusedWin) return null
+    const result = await dialog.showOpenDialog(focusedWin, {
+      properties: ['openDirectory'],
+      defaultPath: getDownloadFolder(),
+      title: 'Choose download folder',
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    setSetting(DOWNLOAD_FOLDER_KEY, result.filePaths[0])
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('download:accept', (_event, downloadId: unknown, customFilename?: unknown) => {
+    if (typeof downloadId !== 'string') return { error: 'invalid_id' }
+    const pending = pendingDownloads.get(downloadId)
+    if (!pending) return { error: 'download_not_found' }
+    const { item, tmpPath } = pending
+
+    // Sanitize custom filename: basename only, no path separators, fallback to original
+    const filename = (typeof customFilename === 'string' && customFilename.trim())
+      ? path.basename(customFilename.trim())
+      : item.getFilename()
+
+    // Download to temp (save path already set in will-download), then move to target folder on completion.
     item.resume()
     pendingDownloads.delete(downloadId)
 
     item.on('done', (_e, state) => {
+      let finalPath: string | null = null
+      if (state === 'completed') {
+        try {
+          finalPath = path.join(getDownloadFolder(), filename)
+          fs.copyFileSync(tmpPath, finalPath)
+        } catch {
+          finalPath = tmpPath // fallback: leave in temp
+        }
+      }
+      // Always clean up temp file
+      try { fs.unlinkSync(tmpPath) } catch {}
+
       for (const dimWin of getAllWindows()) {
         if (dimWin.browserWindow.isDestroyed()) continue
         dimWin.browserWindow.webContents.send('download:complete', {
           downloadId,
           state,
-          savePath: state === 'completed' ? savePath : null,
-          filename: item.getFilename(),
+          savePath: state === 'completed' ? finalPath : null,
+          filename,
         })
         break
       }
     })
 
-    return { success: true, savePath }
+    return { success: true }
+  })
+
+  ipcMain.handle('download:accept-to-media', (_event, downloadId: unknown, customFilename?: unknown) => {
+    if (typeof downloadId !== 'string') return { error: 'invalid_id' }
+    const pending = pendingDownloads.get(downloadId)
+    if (!pending) return { error: 'download_not_found' }
+    const { item, tmpPath } = pending
+
+    const filename = (typeof customFilename === 'string' && customFilename.trim())
+      ? path.basename(customFilename.trim())
+      : item.getFilename()
+
+    // SECURITY: bytes only flow AFTER user clicked "Save to Dimensions".
+    // Download goes to temp (needed for content hashing by importMedia),
+    // then immediately deleted after import. Temp file only exists during active download.
+    item.resume()
+    pendingDownloads.delete(downloadId)
+
+    item.on('done', (_e, state) => {
+      if (state === 'completed') {
+        try {
+          // Import into centralized media library (deduplicates by content hash)
+          const mediaUrl = importMedia(tmpPath, filename, item.getMimeType() || getMimeType(tmpPath))
+          // Clean up temp file
+          try { fs.unlinkSync(tmpPath) } catch {}
+
+          for (const dimWin of getAllWindows()) {
+            if (dimWin.browserWindow.isDestroyed()) continue
+            dimWin.browserWindow.webContents.send('download:complete', {
+              downloadId,
+              state: 'completed',
+              savePath: null,
+              filename: item.getFilename(),
+              mediaUrl,
+              savedToMedia: true,
+            })
+            break
+          }
+        } catch (err) {
+          // Import failed — notify renderer
+          try { fs.unlinkSync(tmpPath) } catch {}
+          for (const dimWin of getAllWindows()) {
+            if (dimWin.browserWindow.isDestroyed()) continue
+            dimWin.browserWindow.webContents.send('download:complete', {
+              downloadId,
+              state: 'interrupted',
+              savePath: null,
+              filename: item.getFilename(),
+              error: err instanceof Error ? err.message : 'Import failed',
+            })
+            break
+          }
+        }
+      } else {
+        // Download failed or was interrupted
+        try { fs.unlinkSync(tmpPath) } catch {}
+        for (const dimWin of getAllWindows()) {
+          if (dimWin.browserWindow.isDestroyed()) continue
+          dimWin.browserWindow.webContents.send('download:complete', {
+            downloadId,
+            state,
+            savePath: null,
+            filename: item.getFilename(),
+          })
+          break
+        }
+      }
+    })
+
+    return { success: true }
   })
 
   ipcMain.handle('download:cancel', (_event, downloadId: unknown) => {
     if (typeof downloadId !== 'string') return { error: 'invalid_id' }
-    const item = pendingDownloads.get(downloadId)
-    if (!item) return { error: 'download_not_found' }
-    item.cancel()
+    const pending = pendingDownloads.get(downloadId)
+    if (!pending) return { error: 'download_not_found' }
+    pending.item.cancel()
     pendingDownloads.delete(downloadId)
+    try { fs.unlinkSync(pending.tmpPath) } catch {}
     return { success: true }
   })
 }

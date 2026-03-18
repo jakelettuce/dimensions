@@ -191,6 +191,13 @@ export interface DimensionsSDK {
   }
   notify(title: string, body?: string): Promise<void>
 
+  /** Media drag & drop — requires "media-drop" capability for receiving. */
+  media: {
+    onDrop(cb: (files: DroppedFile[]) => void): void
+    importDrop(file: DroppedFile): Promise<string>
+    startDrag(assetUrl: string): Promise<void>
+  }
+
   /** Register handler for a keyboard shortcut declared in the widget manifest. */
   onShortcut(action: string, cb: () => void): void
 
@@ -201,6 +208,13 @@ export interface DimensionsSDK {
     onChange(key: string, cb: (value: any) => void): void
     onAnyChange(cb: (props: Record<string, any>) => void): void
   }
+}
+
+export interface DroppedFile {
+  name: string
+  size: number
+  mimeType: string
+  data: ArrayBuffer
 }
 
 export interface PortalState {

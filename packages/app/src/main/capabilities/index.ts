@@ -51,6 +51,7 @@ import { clipboardCapability } from './clipboard'
 import { notificationsCapability } from './notifications'
 import { dataflowCapability } from './dataflow'
 import { portalControlCapability } from './portal-control'
+import { mediaDropCapability } from './media-drop'
 
 const ALL_CAPABILITIES: CapabilityModule[] = [
   kvCapability,
@@ -66,6 +67,7 @@ const ALL_CAPABILITIES: CapabilityModule[] = [
   notificationsCapability,
   dataflowCapability,
   portalControlCapability,
+  mediaDropCapability,
 ]
 
 // ── Registration ──

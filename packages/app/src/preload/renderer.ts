@@ -30,7 +30,10 @@ const INVOKE_CHANNELS = new Set([
   'hide-wcvs',
   'show-wcvs',
   'download:accept',
+  'download:accept-to-media',
   'download:cancel',
+  'download:get-folder',
+  'download:choose-folder',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -211,8 +214,11 @@ contextBridge.exposeInMainWorld('dimensions', {
   },
 
   // Downloads
-  acceptDownload: (downloadId: string) => ipcRenderer.invoke('download:accept', downloadId),
+  acceptDownload: (downloadId: string, filename?: string) => ipcRenderer.invoke('download:accept', downloadId, filename),
+  acceptDownloadToMedia: (downloadId: string, filename?: string) => ipcRenderer.invoke('download:accept-to-media', downloadId, filename),
   cancelDownload: (downloadId: string) => ipcRenderer.invoke('download:cancel', downloadId),
+  getDownloadFolder: () => ipcRenderer.invoke('download:get-folder'),
+  chooseDownloadFolder: () => ipcRenderer.invoke('download:choose-folder'),
   onDownloadConfirm: (cb: (data: any) => void) => {
     ipcRenderer.on('download:confirm', (_e, data) => cb(sanitize(data) as any))
   },

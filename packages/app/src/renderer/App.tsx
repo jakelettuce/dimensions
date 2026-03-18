@@ -28,16 +28,27 @@ export default function App() {
         window.dimensions.cancelDownload(data.downloadId)
         return
       }
+      // Hide WCVs so the modal is visible above the scene
+      window.dimensions.hideWcvs()
       setDownloadRequest(data)
     })
-    window.dimensions.onDownloadComplete((data) => {
+    window.dimensions.onDownloadComplete((data: any) => {
       if (data.state === 'completed') {
-        setBuildStatus(`Downloaded: ${data.filename}`)
+        const msg = data.savedToMedia
+          ? `Saved to Dimensions: ${data.filename}`
+          : `Downloaded: ${data.filename}`
+        setBuildStatus(msg)
         setTimeout(() => setBuildStatus(''), 4000)
       }
     })
     window.dimensions.onDownloadTimeout((data) => {
-      setDownloadRequest(prev => prev?.downloadId === data.downloadId ? null : prev)
+      setDownloadRequest(prev => {
+        if (prev?.downloadId === data.downloadId) {
+          window.dimensions.showWcvs()
+          return null
+        }
+        return prev
+      })
     })
   }, [])
 
@@ -206,7 +217,7 @@ export default function App() {
       {downloadRequest && (
         <DownloadConfirmModal
           request={downloadRequest}
-          onClose={() => setDownloadRequest(null)}
+          onClose={() => { setDownloadRequest(null); window.dimensions.showWcvs() }}
         />
       )}
     </div>
