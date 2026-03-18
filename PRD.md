@@ -424,7 +424,25 @@ sdk.clipboard.write(text: string): Promise<void>
 
 // notifications — requires "notifications"
 sdk.notify(title: string, body?: string): Promise<void>
+
+// widget properties — always available, no capability required
+sdk.props.get(key: string): Promise<any>
+sdk.props.getAll(): Promise<Record<string, any>>
+sdk.props.onChange(key: string, cb: (value: any) => void): void
+sdk.props.onAnyChange(cb: (props: Record<string, any>) => void): void
 ```
+
+### Widget Properties
+
+Props are declared in the widget manifest, stored per-instance in `meta.json`, and editable in the properties panel. Changes are delivered live to the widget via SDK — no rebuild needed.
+
+Props are always available (no capability required) — a widget reading its own configuration is not a privileged operation.
+
+**Prop types:** `string` (with maxLength), `number` (with min/max/step), `boolean`, `color`, `select` (with options), `scene`, `array` (with itemType: "string" | "number")
+
+**Effective value resolution:** `meta.json props[key]` → `manifest props[key].default` → `undefined`
+
+**Validation:** Every prop value is validated against its declared type before persisting. Color values must be valid CSS hex/rgb/hsl. Array items are validated against `itemType`. Strings capped at 10KB. Numbers checked against min/max.
 
 ### SDK Package Contents
 
@@ -751,6 +769,7 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 - OS keychain secrets storage (safeStorage)
 - SQLite (sql.js/WASM) for KV, index, grants, history
 - Widget dataflow wiring (connections.json)
+- Widget properties system (manifest-declared, panel-editable, live SDK delivery, 7 types)
 - `dimensions://` + `dimensions-asset://` protocols
 - `Cmd+K` command palette
 - CLAUDE.md auto-generation (full SDK reference, build guidance, background widget docs)

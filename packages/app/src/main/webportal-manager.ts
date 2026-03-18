@@ -939,7 +939,12 @@ export function freezePortals(dimWin: DimensionsWindow, freeze: boolean): void {
       // Focus on any portal content WCV → select the widget
       const focusHandler = () => {
         if (dimWin.editMode && !dimWin.browserWindow.isDestroyed()) {
+          // Tell renderer (properties panel)
           dimWin.browserWindow.webContents.send('widget:select', widgetId)
+          // Tell scene HTML (selection box)
+          if (!dimWin.sceneWCV.webContents.isDestroyed()) {
+            dimWin.sceneWCV.webContents.send('scene:select-widget', widgetId)
+          }
         }
       }
       for (const [, tab] of portal.tabs) {

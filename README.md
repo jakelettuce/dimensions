@@ -131,10 +131,22 @@ await sdk.portal.onStateChange('my-portal', (state) => {
   console.log(state.url, state.title, state.canGoBack)
 })
 
+// Widget properties — declared in manifest, live-updated via panel or meta.json
+const bg = await sdk.props.get('bgColor')       // no capability needed
+sdk.props.onChange('bgColor', (val) => {         // fires instantly on panel edit
+  document.body.style.background = val
+})
+
 // Wire widgets together via dataflow
 sdk.emit('searchQuery', 'is:unread')  // connected widgets/portals receive the value
 sdk.on('selectedItem', (item) => { ... })
 ```
+
+### Widget properties
+
+Widgets declare configurable props in their manifest — type, default, label. Values are stored per-instance in `meta.json` and editable in the properties panel. Changes are delivered live to the widget via SDK — no rebuild needed.
+
+Prop types: `string`, `number` (with min/max/step), `boolean`, `color`, `select`, `scene`, `array` (with itemType).
 
 ### Compound widgets
 

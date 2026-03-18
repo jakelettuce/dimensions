@@ -47,6 +47,8 @@ const ALLOWED_SDK_CHANNELS = new Set([
   'sdk:portal:closeTab',
   'sdk:portal:switchTab',
   'sdk:portal:getState',
+  // Props
+  'sdk:props:getAll',
 ])
 
 // Fire-and-forget channels (no response expected)
@@ -177,6 +179,38 @@ ipcRenderer.on('scene:widget-shortcut', (_e, data: { widgetId: string; action: s
       break
     }
   }
+})
+
+// ── Prop change forwarding ──
+// Main process sends prop changes to scene WCV, which forwards to the specific widget iframe.
+
+ipcRenderer.on('scene:prop-change', (_e, data: { widgetId: string; key: string; value: any }) => {
+  const iframes = document.querySelectorAll('iframe[data-widget-id]')
+  for (const iframe of iframes) {
+    if ((iframe as HTMLIFrameElement).dataset.widgetId === data.widgetId) {
+      const contentWindow = (iframe as HTMLIFrameElement).contentWindow
+      if (contentWindow) {
+        contentWindow.postMessage(
+          { type: 'sdk-prop-change', key: data.key, value: sanitize(data.value) },
+          '*',
+        )
+      }
+      break
+    }
+  }
+})
+
+// ── Widget selection from main process (portal focus in edit mode) ──
+
+ipcRenderer.on('scene:select-widget', (_e, widgetId: string) => {
+  // Clear previous selection
+  document.querySelectorAll('.widget-wrapper.selected, dimensions-widget.selected').forEach(el => {
+    el.classList.remove('selected')
+  })
+  // Select the widget wrapper by data-widget-id
+  const wrapper = document.querySelector(`.widget-wrapper[data-widget-id="${widgetId}"]`)
+    || document.querySelector(`dimensions-widget[data-widget-id="${widgetId}"]`)
+  if (wrapper) wrapper.classList.add('selected')
 })
 
 // ── Exposed API for scene runtime ──

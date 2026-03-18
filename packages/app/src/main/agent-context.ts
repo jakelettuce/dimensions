@@ -371,6 +371,62 @@ Control it from any other widget with \`portal-control\` capability and matching
 - SDK is injected automatically \u2014 do NOT bundle it
 - Use \`window.sdk.*\` for all SDK methods
 
+## Widget Properties
+
+Props are declared in the manifest, stored per-instance in \`meta.json\`, edited in the properties panel,
+and delivered live to widgets via SDK \u2014 no rebuild needed.
+
+### Declaring props in manifest:
+\`\`\`json
+{
+  "props": [
+    { "key": "title", "type": "string", "default": "Hello", "label": "Title" },
+    { "key": "count", "type": "number", "default": 5, "label": "Count", "min": 1, "max": 100 },
+    { "key": "enabled", "type": "boolean", "default": true, "label": "Enabled" },
+    { "key": "bgColor", "type": "color", "default": "#0a0a0a", "label": "Background" },
+    { "key": "mode", "type": "select", "options": ["light", "dark"], "default": "dark", "label": "Mode" },
+    { "key": "target", "type": "scene", "default": null, "label": "Navigate To" }
+  ]
+}
+\`\`\`
+
+### Overriding per-instance in meta.json:
+\`\`\`json
+{ "id": "ULID", "widgetType": "my-widget", "props": { "bgColor": "#ff0000", "count": 10 } }
+\`\`\`
+Only overridden keys are stored. Missing keys use manifest defaults.
+
+### Reading props in widget code:
+\`\`\`javascript
+// Get a single prop (returns effective value: override or default)
+var color = await sdk.props.get('bgColor');
+
+// Get all props at once
+var all = await sdk.props.getAll();
+
+// Live updates — fires when prop changes in the properties panel or meta.json
+sdk.props.onChange('bgColor', function(value) {
+  document.body.style.background = value;
+});
+
+// Or listen to all changes
+sdk.props.onAnyChange(function(props) {
+  console.log('All props:', props);
+});
+\`\`\`
+
+Props update live without rebuild. The properties panel in edit mode shows type-appropriate inputs.
+Prop types: \`string\` (with maxLength), \`number\` (with min/max/step), \`boolean\`, \`color\`, \`select\`, \`scene\`, \`array\` (with itemType: "string" | "number").
+
+### Array props:
+\`\`\`json
+{ "key": "tags", "type": "array", "itemType": "string", "default": ["tag1", "tag2"], "label": "Tags" }
+\`\`\`
+\`\`\`javascript
+var tags = await sdk.props.get('tags'); // ["tag1", "tag2"]
+sdk.props.onChange('tags', function(val) { console.log('tags changed:', val); });
+\`\`\`
+
 ## Dataflow Wiring (connections.json)
 
 \`\`\`json

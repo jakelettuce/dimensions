@@ -100,6 +100,17 @@ export default function App() {
       useAppStore.getState().setZoom(zoom)
     })
 
+    // Widget props updated — update the store so NoCodePanel reflects changes
+    window.dimensions.onWidgetPropsUpdated(({ widgetId, props }) => {
+      const store = useAppStore.getState()
+      if (store.currentScene?.widgets) {
+        const updated = store.currentScene.widgets.map((w: any) =>
+          w.id === widgetId ? { ...w, props } : w
+        )
+        store.setCurrentScene({ ...store.currentScene, widgets: updated })
+      }
+    })
+
     // Load initial scene
     window.dimensions.getCurrentScene().then((scene) => {
       if (scene) {

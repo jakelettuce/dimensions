@@ -205,7 +205,9 @@ export function registerShortcuts(db: Database): void {
         { type: 'separator' },
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+S', click: handleToggleSidebar },
         { type: 'separator' },
-        ...(isMac ? [{ role: 'close' as const }] : [{ role: 'quit' as const }]),
+        ...(isMac
+          ? [{ label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', role: 'close' as const }]
+          : [{ label: 'Quit', accelerator: 'CmdOrCtrl+Shift+W', role: 'quit' as const }]),
       ],
     },
 

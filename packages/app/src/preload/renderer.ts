@@ -22,6 +22,8 @@ const INVOKE_CHANNELS = new Set([
   'create-dimension',
   'update-panel-widths',
   'set-scale-mode',
+  'set-widget-prop',
+  'reset-widget-prop',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -47,6 +49,7 @@ const RECEIVE_CHANNELS = new Set([
   'scale-mode-changed',
   'zoom-changed',
   'scene-updated',
+  'widget:props-updated',
 ])
 
 // Sanitize data crossing the bridge
@@ -172,6 +175,17 @@ contextBridge.exposeInMainWorld('dimensions', {
   // Zoom
   onZoomChange: (cb: (zoom: number) => void) => {
     ipcRenderer.on('zoom-changed', (_event, zoom) => cb(zoom))
+  },
+
+  // Widget props
+  setWidgetProp: (widgetId: string, key: string, value: unknown) =>
+    ipcRenderer.invoke('set-widget-prop', widgetId, key, value),
+  resetWidgetProp: (widgetId: string, key: string) =>
+    ipcRenderer.invoke('reset-widget-prop', widgetId, key),
+
+  // Widget props updated
+  onWidgetPropsUpdated: (cb: (data: { widgetId: string; props: Record<string, any> }) => void) => {
+    ipcRenderer.on('widget:props-updated', (_event, data) => cb(sanitize(data) as any))
   },
 
   // Scene updated (meta change outside edit mode)

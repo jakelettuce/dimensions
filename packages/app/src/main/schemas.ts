@@ -24,10 +24,15 @@ export const WidgetOutputSchema = z.object({
 
 export const WidgetPropSchema = z.object({
   key: z.string(),
-  type: z.enum(['string', 'number', 'boolean', 'select']),
+  type: z.enum(['string', 'number', 'boolean', 'color', 'select', 'scene', 'array']),
+  itemType: z.enum(['string', 'number']).optional(), // for array type
   options: z.array(z.string()).optional(),
   default: z.any().optional(),
   label: z.string(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.number().optional(),
+  maxLength: z.number().optional(),
 })
 
 // ── Compound widget children ──

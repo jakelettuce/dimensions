@@ -144,6 +144,168 @@ app.whenReady().then(async () => {
     }
   })
 
+  // ── Props system ──
+
+  // Validation for prop values against their declared schema
+  function validatePropValue(
+    schema: { type: string; options?: string[]; min?: number; max?: number },
+    value: unknown,
+  ): string | null {
+    switch (schema.type) {
+      case 'string':
+        if (typeof value !== 'string') return 'Expected string'
+        if (value.length > 10240) return 'Exceeds 10KB limit'
+        if (schema.maxLength && value.length > schema.maxLength) return `Exceeds maxLength ${schema.maxLength}`
+        return null
+      case 'number':
+        if (typeof value !== 'number' || isNaN(value)) return 'Expected number'
+        if (schema.min !== undefined && value < schema.min) return `Below minimum ${schema.min}`
+        if (schema.max !== undefined && value > schema.max) return `Above maximum ${schema.max}`
+        return null
+      case 'boolean':
+        if (typeof value !== 'boolean') return 'Expected boolean'
+        return null
+      case 'color':
+        if (typeof value !== 'string') return 'Expected color string'
+        if (!/^\s*(?:#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d\s,.%]+\)|hsla?\(\s*[\d\s,.%°]+\))\s*$/.test(value))
+          return 'Invalid CSS color'
+        return null
+      case 'select':
+        if (!schema.options?.includes(String(value))) return `Not in options: ${schema.options?.join(', ')}`
+        return null
+      case 'scene':
+        if (value === null || value === '') return null
+        if (typeof value !== 'string') return 'Expected string or null'
+        return null
+      case 'array':
+        if (!Array.isArray(value)) return 'Expected array'
+        if (value.length > 1000) return 'Array exceeds 1000 items'
+        if (schema.itemType === 'number') {
+          for (let i = 0; i < value.length; i++) {
+            if (typeof value[i] !== 'number' || isNaN(value[i])) return `Item ${i} is not a number`
+          }
+        } else if (schema.itemType === 'string') {
+          for (let i = 0; i < value.length; i++) {
+            if (typeof value[i] !== 'string') return `Item ${i} is not a string`
+            if (value[i].length > 10240) return `Item ${i} exceeds 10KB`
+          }
+        }
+        return null
+      default:
+        return null
+    }
+  }
+
+  // Get all effective prop values for a widget (defaults merged with overrides)
+  ipcMain.handle('sdk:props:getAll', (_event, widgetId: unknown) => {
+    if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
+
+    for (const dimWin of getAllWindows()) {
+      if (!dimWin.currentScene) continue
+      const widget = dimWin.currentScene.widgets.get(widgetId)
+      if (!widget) continue
+      const entry = dimWin.currentScene.meta.widgets.find(w => w.id === widgetId)
+
+      const result: Record<string, any> = {}
+      for (const prop of widget.manifest.props ?? []) {
+        result[prop.key] = entry?.props?.[prop.key] ?? prop.default
+      }
+      return sanitizeIpcData(result)
+    }
+    return { error: 'widget_not_found' }
+  })
+
+  // Set a widget prop value — validates, writes meta.json, notifies widget live
+  ipcMain.handle('set-widget-prop', (event, widgetId: unknown, key: unknown, value: unknown) => {
+    if (typeof widgetId !== 'string' || typeof key !== 'string') return { error: 'invalid_args' }
+
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin?.currentScene) return { error: 'no_scene' }
+
+    const widget = dimWin.currentScene.widgets.get(widgetId)
+    if (!widget) return { error: 'widget_not_found' }
+
+    const propSchema = widget.manifest.props?.find(p => p.key === key)
+    if (!propSchema) return { error: 'prop_not_declared', key }
+
+    const validationError = validatePropValue(propSchema, value)
+    if (validationError) return { error: 'invalid_value', details: validationError }
+
+    // Write to meta.json
+    const metaPath = path.join(dimWin.currentScene.path, 'meta.json')
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+    const metaEntry = meta.widgets.find((w: any) => w.id === widgetId)
+    if (!metaEntry) return { error: 'entry_not_found' }
+    if (!metaEntry.props) metaEntry.props = {}
+    metaEntry.props[key] = value
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8')
+
+    // Update in-memory state
+    const memEntry = dimWin.currentScene.meta.widgets.find(w => w.id === widgetId)
+    if (memEntry) {
+      if (!memEntry.props) memEntry.props = {}
+      memEntry.props[key] = value
+    }
+
+    // Notify widget iframe live
+    if (!dimWin.sceneWCV.webContents.isDestroyed()) {
+      dimWin.sceneWCV.webContents.send('scene:prop-change', { widgetId, key, value })
+    }
+
+    // Notify renderer so the properties panel reflects the change
+    if (!dimWin.browserWindow.isDestroyed()) {
+      dimWin.browserWindow.webContents.send('widget:props-updated', {
+        widgetId,
+        props: memEntry?.props ?? {},
+      })
+    }
+
+    return { success: true }
+  })
+
+  // Reset a widget prop to its manifest default
+  ipcMain.handle('reset-widget-prop', (event, widgetId: unknown, key: unknown) => {
+    if (typeof widgetId !== 'string' || typeof key !== 'string') return { error: 'invalid_args' }
+
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin?.currentScene) return { error: 'no_scene' }
+
+    const widget = dimWin.currentScene.widgets.get(widgetId)
+    if (!widget) return { error: 'widget_not_found' }
+
+    const propSchema = widget.manifest.props?.find(p => p.key === key)
+    if (!propSchema) return { error: 'prop_not_declared', key }
+
+    // Remove from meta.json
+    const metaPath = path.join(dimWin.currentScene.path, 'meta.json')
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+    const metaEntry = meta.widgets.find((w: any) => w.id === widgetId)
+    if (metaEntry?.props) {
+      delete metaEntry.props[key]
+      fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8')
+    }
+
+    // Update in-memory state
+    const memEntry = dimWin.currentScene.meta.widgets.find(w => w.id === widgetId)
+    if (memEntry?.props) delete memEntry.props[key]
+
+    // Notify widget with default value
+    const defaultValue = propSchema.default
+    if (!dimWin.sceneWCV.webContents.isDestroyed()) {
+      dimWin.sceneWCV.webContents.send('scene:prop-change', { widgetId, key, value: defaultValue })
+    }
+
+    // Notify renderer
+    if (!dimWin.browserWindow.isDestroyed()) {
+      dimWin.browserWindow.webContents.send('widget:props-updated', {
+        widgetId,
+        props: memEntry?.props ?? {},
+      })
+    }
+
+    return { success: true }
+  })
+
   ensureHomeDimension()
 
   // Home is a dimension — load via protocol to get proper dimension routing

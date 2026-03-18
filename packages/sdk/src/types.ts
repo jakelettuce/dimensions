@@ -75,10 +75,15 @@ export interface WidgetOutput {
 
 export interface WidgetProp {
   key: string
-  type: 'string' | 'number' | 'boolean' | 'select'
-  options?: string[]
+  type: 'string' | 'number' | 'boolean' | 'color' | 'select' | 'scene' | 'array'
+  itemType?: 'string' | 'number'
   default?: any
   label: string
+  options?: string[]
+  min?: number
+  max?: number
+  step?: number
+  maxLength?: number
 }
 
 export interface SceneMeta {
@@ -186,6 +191,14 @@ export interface DimensionsSDK {
 
   /** Register handler for a keyboard shortcut declared in the widget manifest. */
   onShortcut(action: string, cb: () => void): void
+
+  /** Widget properties — declared in manifest, stored in meta.json, edited in properties panel. */
+  props: {
+    get(key: string): Promise<any>
+    getAll(): Promise<Record<string, any>>
+    onChange(key: string, cb: (value: any) => void): void
+    onAnyChange(cb: (props: Record<string, any>) => void): void
+  }
 }
 
 export interface PortalState {

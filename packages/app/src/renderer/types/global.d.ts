@@ -42,6 +42,10 @@ declare global {
       onSceneChanged: (cb: (scene: any) => void) => void
       onSceneSidebarChange: (cb: (open: boolean) => void) => void
       updatePanelWidths: (sidebarWidth: number, editorWidth: number) => Promise<void>
+      // Widget props
+      setWidgetProp: (widgetId: string, key: string, value: unknown) => Promise<any>
+      resetWidgetProp: (widgetId: string, key: string) => Promise<any>
+      onWidgetPropsUpdated: (cb: (data: { widgetId: string; props: Record<string, any> }) => void) => void
       // Scale mode
       setScaleMode: (mode: string) => Promise<void>
       onScaleModeChange: (cb: (mode: string) => void) => void

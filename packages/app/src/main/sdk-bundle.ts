@@ -63,10 +63,12 @@ function getInlineSdkBootstrap(): string {
   return `
 (function() {
   var params = new URLSearchParams(window.location.search);
+  var propsRaw = params.get('props');
   window.__DIMENSIONS_CONTEXT__ = {
     widgetId: params.get('widgetId') || '',
     sceneId: params.get('sceneId') || '',
     sceneTitle: decodeURIComponent(params.get('sceneTitle') || ''),
+    props: propsRaw ? JSON.parse(decodeURIComponent(propsRaw)) : {},
   };
 })();
 `
@@ -77,10 +79,12 @@ export function getContextInjectionScript(): string {
   return `<script>
 (function() {
   var params = new URLSearchParams(window.location.search);
+  var propsRaw = params.get('props');
   window.__DIMENSIONS_CONTEXT__ = {
     widgetId: params.get('widgetId') || '',
     sceneId: params.get('sceneId') || '',
     sceneTitle: decodeURIComponent(params.get('sceneTitle') || ''),
+    props: propsRaw ? JSON.parse(decodeURIComponent(propsRaw)) : {},
   };
 })();
 </script>`

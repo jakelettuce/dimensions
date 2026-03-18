@@ -124,6 +124,34 @@ window.addEventListener('message', (event) => {
   }
 })
 
+// ── Props cache + subscriptions ──
+
+let propsCache: Record<string, any> | null = null
+const propChangeListeners = new Map<string, Array<(value: any) => void>>()
+const propAnyChangeListeners: Array<(props: Record<string, any>) => void> = []
+
+window.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'sdk-prop-change') return
+  const { key, value } = event.data
+  // Update cache
+  if (propsCache) propsCache[key] = value
+  // Fire key-specific listeners
+  const listeners = propChangeListeners.get(key)
+  if (listeners) {
+    for (const cb of listeners) { try { cb(value) } catch {} }
+  }
+  // Fire any-change listeners
+  if (propsCache) {
+    for (const cb of propAnyChangeListeners) { try { cb({ ...propsCache }) } catch {} }
+  }
+})
+
+async function ensurePropsCache(): Promise<Record<string, any>> {
+  if (propsCache) return propsCache
+  propsCache = await call<Record<string, any>>('sdk:props:getAll')
+  return propsCache
+}
+
 // ── Widget shortcut subscriptions ──
 
 const shortcutListeners = new Map<string, Array<() => void>>()
@@ -275,6 +303,22 @@ export const sdk: DimensionsSDK = {
 
   // notifications — requires "notifications"
   notify: (title: string, body?: string) => call('sdk:notify', title, body),
+
+  // Widget properties — no capability required
+  props: {
+    get: async (key: string) => {
+      const all = await ensurePropsCache()
+      return all[key]
+    },
+    getAll: () => ensurePropsCache().then(c => ({ ...c })),
+    onChange: (key: string, cb: (value: any) => void) => {
+      if (!propChangeListeners.has(key)) propChangeListeners.set(key, [])
+      propChangeListeners.get(key)!.push(cb)
+    },
+    onAnyChange: (cb: (props: Record<string, any>) => void) => {
+      propAnyChangeListeners.push(cb)
+    },
+  },
 
   // Widget shortcuts — declared in manifest, dispatched when widget is focused
   onShortcut: (action: string, cb: () => void) => {
