@@ -30,14 +30,33 @@ export interface WSConnection {
   close(): void
 }
 
+export interface CompoundChildLayout {
+  anchor: 'top' | 'bottom' | 'left' | 'right' | 'fill'
+  height?: number
+  width?: number
+  top?: number
+  bottom?: number
+  left?: number
+  right?: number
+}
+
+export interface CompoundChild {
+  id: string
+  type: 'custom' | 'webportal'
+  widgetType?: string
+  url?: string
+  layout: CompoundChildLayout
+}
+
 export interface WidgetManifest {
   id: string
-  type: 'custom' | 'webportal' | 'terminal'
+  type: 'custom' | 'webportal' | 'terminal' | 'compound'
   title: string
   capabilities: string[]
   allowedHosts?: string[]
   allowedWsHosts?: string[]
   envKeys?: string[]
+  children?: CompoundChild[]
   inputs?: WidgetInput[]
   outputs?: WidgetOutput[]
   props?: WidgetProp[]
@@ -146,12 +165,18 @@ export interface DimensionsSDK {
   }
   portal: {
     navigate(portalWidgetId: string, url: string): Promise<void>
+    goBack(portalWidgetId: string): Promise<void>
+    goForward(portalWidgetId: string): Promise<void>
+    reload(portalWidgetId: string): Promise<void>
+    stop(portalWidgetId: string): Promise<void>
     injectCSS(portalWidgetId: string, css: string): Promise<void>
     removeCSS(portalWidgetId: string, key: string): Promise<void>
+    setVisible(portalWidgetId: string, visible: boolean): Promise<void>
     newTab(portalWidgetId: string, url?: string): Promise<string>
     closeTab(portalWidgetId: string, tabId: string): Promise<void>
     switchTab(portalWidgetId: string, tabId: string): Promise<void>
     getState(portalWidgetId: string): Promise<PortalState>
+    onStateChange(portalWidgetId: string, cb: (state: PortalState) => void): void
   }
   clipboard: {
     read(): Promise<string>
@@ -161,6 +186,12 @@ export interface DimensionsSDK {
 }
 
 export interface PortalState {
+  url: string
+  title: string
+  isLoading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+  isPlayingAudio: boolean
   activeTabId: string
   tabs: Array<{
     id: string

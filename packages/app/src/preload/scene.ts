@@ -36,8 +36,13 @@ const ALLOWED_SDK_CHANNELS = new Set([
   'sdk:scene:info',
   // Portal control
   'sdk:portal:navigate',
+  'sdk:portal:goBack',
+  'sdk:portal:goForward',
+  'sdk:portal:reload',
+  'sdk:portal:stop',
   'sdk:portal:injectCSS',
   'sdk:portal:removeCSS',
+  'sdk:portal:setVisible',
   'sdk:portal:newTab',
   'sdk:portal:closeTab',
   'sdk:portal:switchTab',
@@ -124,6 +129,28 @@ ipcRenderer.on('scene:dataflow-input', (_e, data: { targetWidgetId: string; inpu
         )
       }
       break
+    }
+  }
+})
+
+// ── Portal state update forwarding ──
+// Main process sends portal state updates to scene WCV, which broadcasts to ALL widget iframes.
+// Widget SDK filters locally based on onStateChange registrations.
+
+ipcRenderer.on('scene:portal-state-update', (_e, data: { portalId: string; shortPortalId: string; state: any }) => {
+  const iframes = document.querySelectorAll('iframe[data-widget-id]')
+  for (const iframe of iframes) {
+    const contentWindow = (iframe as HTMLIFrameElement).contentWindow
+    if (contentWindow) {
+      contentWindow.postMessage(
+        {
+          type: 'sdk-portal-state-update',
+          portalId: data.portalId,
+          shortPortalId: data.shortPortalId,
+          state: sanitize(data.state),
+        },
+        '*',
+      )
     }
   }
 })

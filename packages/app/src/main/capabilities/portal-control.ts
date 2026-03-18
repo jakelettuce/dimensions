@@ -1,6 +1,6 @@
 import type { CapabilityModule, CapabilityContext } from './index'
 import { assertCapability } from './index'
-import { getPortal, switchPortalTab } from '../webportal-manager'
+import { getPortal, switchPortalTab, createPortalTab, closePortalTab } from '../webportal-manager'
 import type { DimensionsWindow } from '../window-manager'
 
 interface PortalAccessResult {
@@ -28,19 +28,36 @@ function validatePortalAccess(
     return { error: 'portal_target_denied', widgetId, portalWidgetId }
   }
 
-  const scene = ctx.getScene(widgetId)
-  if (!scene) return { error: 'scene_not_found' }
+  // Resolve portal ID — try direct lookup first, then compound child pattern
+  let resolvedPortalId = portalWidgetId
+  let portal = getPortal(portalWidgetId)
 
-  if (!scene.widgets.has(portalWidgetId)) {
-    return { error: 'portal_not_in_scene', portalWidgetId }
+  if (!portal) {
+    // Try as compound child: widgetId:childId
+    const compoundPortalId = `${widgetId}:${portalWidgetId}`
+    portal = getPortal(compoundPortalId)
+    if (portal) {
+      resolvedPortalId = compoundPortalId
+    }
   }
 
-  const portalWidget = scene.widgets.get(portalWidgetId)!
-  if (portalWidget.manifest.type !== 'webportal') {
-    return { error: 'target_not_a_portal', portalWidgetId }
+  if (!portal) {
+    // Also check scene widgets for the portal by widgetType matching
+    const scene = ctx.getScene(widgetId)
+    if (scene) {
+      for (const entry of scene.meta.widgets) {
+        const w = scene.widgets.get(entry.id)
+        if (w && w.manifest.type === 'webportal' && w.widgetType === portalWidgetId) {
+          portal = getPortal(entry.id)
+          if (portal) {
+            resolvedPortalId = entry.id
+            break
+          }
+        }
+      }
+    }
   }
 
-  const portal = getPortal(portalWidgetId)
   if (!portal) return { error: 'portal_not_mounted', portalWidgetId }
 
   const dimWin = ctx.getWindow(widgetId)
@@ -84,6 +101,111 @@ export const portalControlCapability: CapabilityModule = {
         }
 
         wc.loadURL(normalizedUrl).catch(() => {})
+        return null
+      },
+    )
+
+    ctx.ipcMain.handle(
+      'sdk:portal:goBack',
+      async (_event, widgetId: unknown, portalWidgetId: unknown) => {
+        if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
+        if (typeof portalWidgetId !== 'string') return { error: 'invalid_portal_widget_id' }
+
+        const result = validatePortalAccess(widgetId, portalWidgetId, ctx)
+        if (isError(result)) return result
+
+        const { portal } = result
+        const tab = portal.tabs.get(portal.activeTabId)
+        if (!tab) return { error: 'no_active_tab' }
+
+        const wc = tab.contentWCV.webContents
+        if (!wc.isDestroyed() && wc.navigationHistory.canGoBack()) {
+          wc.navigationHistory.goBack()
+        }
+        return null
+      },
+    )
+
+    ctx.ipcMain.handle(
+      'sdk:portal:goForward',
+      async (_event, widgetId: unknown, portalWidgetId: unknown) => {
+        if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
+        if (typeof portalWidgetId !== 'string') return { error: 'invalid_portal_widget_id' }
+
+        const result = validatePortalAccess(widgetId, portalWidgetId, ctx)
+        if (isError(result)) return result
+
+        const { portal } = result
+        const tab = portal.tabs.get(portal.activeTabId)
+        if (!tab) return { error: 'no_active_tab' }
+
+        const wc = tab.contentWCV.webContents
+        if (!wc.isDestroyed() && wc.navigationHistory.canGoForward()) {
+          wc.navigationHistory.goForward()
+        }
+        return null
+      },
+    )
+
+    ctx.ipcMain.handle(
+      'sdk:portal:reload',
+      async (_event, widgetId: unknown, portalWidgetId: unknown) => {
+        if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
+        if (typeof portalWidgetId !== 'string') return { error: 'invalid_portal_widget_id' }
+
+        const result = validatePortalAccess(widgetId, portalWidgetId, ctx)
+        if (isError(result)) return result
+
+        const { portal } = result
+        const tab = portal.tabs.get(portal.activeTabId)
+        if (!tab) return { error: 'no_active_tab' }
+
+        const wc = tab.contentWCV.webContents
+        if (!wc.isDestroyed()) wc.reload()
+        return null
+      },
+    )
+
+    ctx.ipcMain.handle(
+      'sdk:portal:stop',
+      async (_event, widgetId: unknown, portalWidgetId: unknown) => {
+        if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
+        if (typeof portalWidgetId !== 'string') return { error: 'invalid_portal_widget_id' }
+
+        const result = validatePortalAccess(widgetId, portalWidgetId, ctx)
+        if (isError(result)) return result
+
+        const { portal } = result
+        const tab = portal.tabs.get(portal.activeTabId)
+        if (!tab) return { error: 'no_active_tab' }
+
+        const wc = tab.contentWCV.webContents
+        if (!wc.isDestroyed()) wc.stop()
+        return null
+      },
+    )
+
+    ctx.ipcMain.handle(
+      'sdk:portal:setVisible',
+      async (_event, widgetId: unknown, portalWidgetId: unknown, visible: unknown) => {
+        if (typeof widgetId !== 'string') return { error: 'invalid_widget_id' }
+        if (typeof portalWidgetId !== 'string') return { error: 'invalid_portal_widget_id' }
+        if (typeof visible !== 'boolean') return { error: 'invalid_visible' }
+
+        const result = validatePortalAccess(widgetId, portalWidgetId, ctx)
+        if (isError(result)) return result
+
+        const { portal, dimWin } = result
+        const activeTab = portal.tabs.get(portal.activeTabId)
+        if (!activeTab) return { error: 'no_active_tab' }
+
+        if (!dimWin.browserWindow.isDestroyed()) {
+          if (visible) {
+            dimWin.browserWindow.contentView.addChildView(activeTab.contentWCV)
+          } else {
+            try { dimWin.browserWindow.contentView.removeChildView(activeTab.contentWCV) } catch {}
+          }
+        }
         return null
       },
     )
@@ -142,11 +264,8 @@ export const portalControlCapability: CapabilityModule = {
         const result = validatePortalAccess(widgetId, portalWidgetId, ctx)
         if (isError(result)) return result
 
-        // newTab is handled by portal IPC handlers in webportal-manager
-        // Invoke via the already-registered handler
-        const { portal, dimWin } = result
-        // TODO: export createTab from webportal-manager for direct use
-        return null
+        const tabId = createPortalTab(result.portal.widgetId, (url as string) || 'about:blank')
+        return tabId ? { tabId } : { error: 'failed_to_create_tab' }
       },
     )
 
@@ -160,12 +279,8 @@ export const portalControlCapability: CapabilityModule = {
         const result = validatePortalAccess(widgetId, portalWidgetId, ctx)
         if (isError(result)) return result
 
-        const { portal } = result
-        if (portal.tabs.size <= 1) return { error: 'cannot_close_last_tab' }
-        if (!portal.tabs.has(tabId)) return { error: 'tab_not_found', tabId }
-
-        // TODO: export closeTab from webportal-manager for direct use
-        return null
+        const success = closePortalTab(result.portal.widgetId, tabId)
+        return success ? null : { error: 'failed_to_close_tab' }
       },
     )
 
@@ -197,17 +312,27 @@ export const portalControlCapability: CapabilityModule = {
         if (isError(result)) return result
 
         const { portal } = result
-        const tabs = Array.from(portal.tabs.entries()).map(([id, tab]: [string, any]) => ({
+        const tab = portal.tabs.get(portal.activeTabId)
+        const tabs = Array.from(portal.tabs.entries()).map(([id, t]: [string, any]) => ({
           id,
-          url: tab.url,
-          title: tab.title,
-          isLoading: tab.isLoading,
-          canGoBack: tab.canGoBack,
-          canGoForward: tab.canGoForward,
+          url: t.url,
+          title: t.title,
+          isLoading: t.isLoading,
+          canGoBack: t.canGoBack,
+          canGoForward: t.canGoForward,
           isActive: id === portal.activeTabId,
         }))
 
-        return ctx.sanitize({ activeTabId: portal.activeTabId, tabs })
+        return ctx.sanitize({
+          url: tab?.url ?? '',
+          title: tab?.title ?? '',
+          isLoading: tab?.isLoading ?? false,
+          canGoBack: tab?.canGoBack ?? false,
+          canGoForward: tab?.canGoForward ?? false,
+          isPlayingAudio: tab?.isPlayingAudio ?? false,
+          activeTabId: portal.activeTabId,
+          tabs,
+        })
       },
     )
   },

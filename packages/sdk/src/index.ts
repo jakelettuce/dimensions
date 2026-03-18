@@ -108,6 +108,22 @@ window.addEventListener('message', (event) => {
   }
 })
 
+// ── Portal state change subscriptions ──
+
+const portalStateListeners = new Map<string, Array<(state: PortalState) => void>>()
+
+window.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'sdk-portal-state-update') return
+  const { portalId, shortPortalId, state } = event.data
+  // Try matching on full ID first, then short ID (for compound children)
+  const listeners = portalStateListeners.get(portalId) || portalStateListeners.get(shortPortalId)
+  if (listeners) {
+    for (const cb of listeners) {
+      try { cb(state) } catch {}
+    }
+  }
+})
+
 // ── Dataflow subscriptions ──
 
 const dataflowListeners = new Map<string, Array<(value: any) => void>>()
@@ -217,12 +233,23 @@ export const sdk: DimensionsSDK = {
   // portal control — requires "portal-control"
   portal: {
     navigate: (portalWidgetId: string, url: string) => call('sdk:portal:navigate', portalWidgetId, url),
+    goBack: (portalWidgetId: string) => call('sdk:portal:goBack', portalWidgetId),
+    goForward: (portalWidgetId: string) => call('sdk:portal:goForward', portalWidgetId),
+    reload: (portalWidgetId: string) => call('sdk:portal:reload', portalWidgetId),
+    stop: (portalWidgetId: string) => call('sdk:portal:stop', portalWidgetId),
     injectCSS: (portalWidgetId: string, css: string) => call('sdk:portal:injectCSS', portalWidgetId, css),
     removeCSS: (portalWidgetId: string, key: string) => call('sdk:portal:removeCSS', portalWidgetId, key),
+    setVisible: (portalWidgetId: string, visible: boolean) => call('sdk:portal:setVisible', portalWidgetId, visible),
     newTab: (portalWidgetId: string, url?: string) => call<string>('sdk:portal:newTab', portalWidgetId, url),
     closeTab: (portalWidgetId: string, tabId: string) => call('sdk:portal:closeTab', portalWidgetId, tabId),
     switchTab: (portalWidgetId: string, tabId: string) => call('sdk:portal:switchTab', portalWidgetId, tabId),
     getState: (portalWidgetId: string) => call<PortalState>('sdk:portal:getState', portalWidgetId),
+    onStateChange: (portalWidgetId: string, cb: (state: PortalState) => void) => {
+      if (!portalStateListeners.has(portalWidgetId)) {
+        portalStateListeners.set(portalWidgetId, [])
+      }
+      portalStateListeners.get(portalWidgetId)!.push(cb)
+    },
   },
 
   // clipboard — requires "clipboard"

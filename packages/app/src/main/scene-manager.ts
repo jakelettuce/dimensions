@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { ulid } from 'ulid'
 import { SceneMetaSchema, WidgetManifestSchema, ConnectionsFileSchema, DimensionMetaSchema } from './schemas'
-import type { SceneMeta, WidgetManifest, Connection, DimensionMeta, Theme, Viewport } from './schemas'
+import type { SceneMeta, WidgetManifest, Connection, DimensionMeta, Theme, Viewport, CompoundChild } from './schemas'
 import { DIMENSIONS_DIR } from './constants'
 
 // ── Widget state (runtime, not persisted) ──
@@ -167,6 +167,77 @@ function buildBundleUrl(widget: WidgetState, entryId: string, sceneId: string, s
 }
 
 /**
+ * Calculate child bounds within a compound widget's area.
+ * Processing order: top, bottom, left, right anchors consume space, fill gets remainder.
+ */
+function calculateCompoundChildBounds(
+  children: CompoundChild[],
+  containerWidth: number,
+  containerHeight: number,
+): Map<string, { x: number; y: number; width: number; height: number }> {
+  const result = new Map<string, { x: number; y: number; width: number; height: number }>()
+
+  // Available rect starts as the full container
+  let availX = 0, availY = 0, availW = containerWidth, availH = containerHeight
+
+  // Process anchored children first (top, bottom, left, right), then fill
+  const ordered = [
+    ...children.filter(c => c.layout.anchor === 'top'),
+    ...children.filter(c => c.layout.anchor === 'bottom'),
+    ...children.filter(c => c.layout.anchor === 'left'),
+    ...children.filter(c => c.layout.anchor === 'right'),
+    ...children.filter(c => c.layout.anchor === 'fill'),
+  ]
+
+  for (const child of ordered) {
+    const { anchor } = child.layout
+    switch (anchor) {
+      case 'top': {
+        const h = child.layout.height ?? 36
+        result.set(child.id, { x: availX, y: availY, width: availW, height: h })
+        availY += h
+        availH -= h
+        break
+      }
+      case 'bottom': {
+        const h = child.layout.height ?? 36
+        result.set(child.id, { x: availX, y: availY + availH - h, width: availW, height: h })
+        availH -= h
+        break
+      }
+      case 'left': {
+        const w = child.layout.width ?? 200
+        result.set(child.id, { x: availX, y: availY, width: w, height: availH })
+        availX += w
+        availW -= w
+        break
+      }
+      case 'right': {
+        const w = child.layout.width ?? 200
+        result.set(child.id, { x: availX + availW - w, y: availY, width: w, height: availH })
+        availW -= w
+        break
+      }
+      case 'fill': {
+        const inT = child.layout.top ?? 0
+        const inB = child.layout.bottom ?? 0
+        const inL = child.layout.left ?? 0
+        const inR = child.layout.right ?? 0
+        result.set(child.id, {
+          x: availX + inL,
+          y: availY + inT,
+          width: Math.max(0, availW - inL - inR),
+          height: Math.max(0, availH - inT - inB),
+        })
+        break
+      }
+    }
+  }
+
+  return result
+}
+
+/**
  * Generate the scene HTML shell that mounts widget iframes (Canvas mode).
  * This is served via dimensions-asset:// to the scene WCV.
  */
@@ -202,6 +273,45 @@ export function generateSceneHtml(scene: SceneState): string {
           style="position:fixed;left:0;top:0;width:100%;height:100%;border:none;z-index:0;"
         ></iframe>`
         return '' // rendered separately outside the container
+      }
+
+      // ── Compound widget ──
+      if (widget.manifest.type === 'compound' && widget.manifest.children?.length) {
+        const children = widget.manifest.children
+        const childBounds = calculateCompoundChildBounds(children, width, height)
+
+        // Compound iframe renders at full size (the chrome/container UI)
+        const compoundIframe = bundleUrl ? `<iframe
+          id="widget-${entry.id}"
+          data-widget-id="${entry.id}"
+          src="${bundleUrl}"
+          sandbox="allow-scripts allow-same-origin"
+          style="position:absolute;left:0;top:0;width:100%;height:100%;border:none;background:transparent;"
+        ></iframe>` : ''
+
+        // Child placeholders for portal WCVs (positioned within compound bounds)
+        const childPlaceholders = children
+          .filter(c => c.type === 'webportal')
+          .map(child => {
+            const cb = childBounds.get(child.id)
+            if (!cb) return ''
+            const portalId = `${entry.id}:${child.id}`
+            return `<div class="compound-portal-placeholder"
+              data-portal-id="${portalId}"
+              data-compound-id="${entry.id}"
+              data-child-id="${child.id}"
+              style="position:absolute;left:${cb.x}px;top:${cb.y}px;width:${cb.width}px;height:${cb.height}px;"
+            ></div>`
+          })
+          .join('\n        ')
+
+        return `<div class="widget-wrapper" data-widget-id="${entry.id}"
+          style="left:${x}px;top:${y}px;width:${width}px;height:${height}px;">
+          <div class="drag-handle"></div>
+          ${compoundIframe}
+          ${childPlaceholders}
+          <div class="resize-handle"></div>
+        </div>`
       }
 
       if (!bundleUrl) {
@@ -404,6 +514,8 @@ export function generateSceneHtml(scene: SceneState): string {
       if (window.dimensionsScene) {
         window.dimensionsScene.reportScale(totalScale);
       }
+      // Re-report compound portal bounds after scale changes
+      if (typeof reportAllPortalBounds === 'function') reportAllPortalBounds();
     }
 
     // Initial computation
@@ -471,6 +583,34 @@ export function generateSceneHtml(scene: SceneState): string {
       }
     }, { passive: false });
 
+    // ── Compound + standalone portal placeholder bounds reporting ──
+    // Single function re-reports all portal placeholder bounds.
+    // Called on: initial load, resize, scroll, scale change, zoom change.
+    function reportAllPortalBounds() {
+      if (!window.dimensionsScene) return;
+      document.querySelectorAll('.compound-portal-placeholder, .portal-placeholder-reporter').forEach(function(el) {
+        var pid = el.getAttribute('data-portal-id');
+        if (!pid) return;
+        var rect = el.getBoundingClientRect();
+        window.dimensionsScene.reportWidgetBounds(pid, {
+          x: rect.left, y: rect.top, width: rect.width, height: rect.height,
+        });
+      });
+    }
+
+    // Observe size changes on each placeholder
+    document.querySelectorAll('.compound-portal-placeholder').forEach(function(el) {
+      new ResizeObserver(reportAllPortalBounds).observe(el);
+    });
+
+    if (scroller) {
+      scroller.addEventListener('scroll', reportAllPortalBounds, { passive: true });
+    }
+
+    requestAnimationFrame(function() {
+      requestAnimationFrame(reportAllPortalBounds);
+    });
+
     // ── Edit-mode: selection, drag, resize ──
 
     function postSdk(method, args) {
@@ -516,6 +656,7 @@ export function generateSceneHtml(scene: SceneState): string {
           wrapper.style.left = (origLeft + dx) + 'px';
           wrapper.style.top = (origTop + dy) + 'px';
           postSdk('sdk:widget:bounds-live', [widgetId, getBoundsFromWrapper(wrapper)]);
+          reportAllPortalBounds();
         }
         function onUp(ev) {
           target.releasePointerCapture(ev.pointerId);
@@ -545,6 +686,7 @@ export function generateSceneHtml(scene: SceneState): string {
           wrapper.style.width = Math.max(40, origW + dw) + 'px';
           wrapper.style.height = Math.max(40, origH + dh) + 'px';
           postSdk('sdk:widget:bounds-live', [widgetId, getBoundsFromWrapper(wrapper)]);
+          reportAllPortalBounds();
         }
         function onRUp(ev) {
           target.releasePointerCapture(ev.pointerId);
@@ -589,7 +731,10 @@ export function generateLayoutSceneHtml(scene: SceneState): string {
   const layoutHtml = scene.layoutHtml || ''
 
   // Build widget map for the custom element
-  const widgetMap: Record<string, Array<{ id: string; bundleUrl: string; manifestType: string }>> = {}
+  const widgetMap: Record<string, Array<{
+    id: string; bundleUrl: string; manifestType: string;
+    children?: Array<{ id: string; type: string; url?: string; layout: any }>
+  }>> = {}
   for (const entry of scene.meta.widgets) {
     const widget = scene.widgets.get(entry.id)
     if (!widget) continue
@@ -600,6 +745,7 @@ export function generateLayoutSceneHtml(scene: SceneState): string {
       id: entry.id,
       bundleUrl,
       manifestType: widget.manifest.type,
+      children: widget.manifest.children ?? undefined,
     })
   }
 
@@ -701,7 +847,62 @@ export function generateLayoutSceneHtml(scene: SceneState): string {
 
         this.dataset.widgetId = entry.id;
 
-        if (entry.manifestType === 'webportal') {
+        if (entry.manifestType === 'compound' && entry.children && entry.children.length) {
+          // Compound widget: create compound iframe + portal child placeholders
+          this.style.position = 'relative';
+
+          if (entry.bundleUrl) {
+            var iframe = document.createElement('iframe');
+            iframe.id = 'widget-' + entry.id;
+            iframe.dataset.widgetId = entry.id;
+            iframe.src = entry.bundleUrl;
+            iframe.sandbox = 'allow-scripts allow-same-origin';
+            iframe.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;border:none;background:transparent;';
+            this.appendChild(iframe);
+          }
+
+          // Portal child placeholders with ResizeObserver
+          var compoundId = entry.id;
+          var cleanups = [];
+          var scroller = document.getElementById('scene-scroll');
+
+          entry.children.forEach(function(child) {
+            if (child.type !== 'webportal') return;
+            var portalId = compoundId + ':' + child.id;
+            var placeholder = document.createElement('div');
+            placeholder.className = 'compound-portal-placeholder';
+            placeholder.dataset.portalId = portalId;
+            // Layout rules determine position — for layout mode, use CSS within the compound
+            // Default: fill the compound element
+            if (child.layout.anchor === 'fill') {
+              placeholder.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;';
+            } else if (child.layout.anchor === 'top') {
+              placeholder.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:' + (child.layout.height || 36) + 'px;';
+            } else if (child.layout.anchor === 'bottom') {
+              placeholder.style.cssText = 'position:absolute;left:0;bottom:0;width:100%;height:' + (child.layout.height || 36) + 'px;';
+            }
+            this.appendChild(placeholder);
+
+            function reportBounds() {
+              if (!window.dimensionsScene) return;
+              var rect = placeholder.getBoundingClientRect();
+              window.dimensionsScene.reportWidgetBounds(portalId, {
+                x: rect.left, y: rect.top, width: rect.width, height: rect.height,
+              });
+            }
+            var ro = new ResizeObserver(reportBounds);
+            ro.observe(placeholder);
+            if (scroller) scroller.addEventListener('scroll', reportBounds, { passive: true });
+            requestAnimationFrame(function() { requestAnimationFrame(reportBounds); });
+            cleanups.push(function() {
+              ro.disconnect();
+              if (scroller) scroller.removeEventListener('scroll', reportBounds);
+            });
+          }.bind(this));
+
+          this._cleanup = function() { cleanups.forEach(function(fn) { fn(); }); };
+
+        } else if (entry.manifestType === 'webportal') {
           // Portal widget: create placeholder div, report bounds
           var placeholder = document.createElement('div');
           placeholder.className = 'portal-placeholder';
@@ -722,7 +923,6 @@ export function generateLayoutSceneHtml(scene: SceneState): string {
             });
           }
 
-          // Report on resize, scroll, mutation
           var ro = new ResizeObserver(reportBounds);
           ro.observe(this);
 
@@ -731,7 +931,6 @@ export function generateLayoutSceneHtml(scene: SceneState): string {
             scroller.addEventListener('scroll', reportBounds, { passive: true });
           }
 
-          // Also report after layout settles
           requestAnimationFrame(function() {
             requestAnimationFrame(reportBounds);
           });

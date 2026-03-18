@@ -247,7 +247,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
     // Initial build of all custom widgets (async, non-blocking)
     // Uses widgetDir from WidgetState — no scanning needed
     const widgetBuildPromises = Array.from(scene.widgets.values())
-      .filter((w) => w.manifest.type === 'custom')
+      .filter((w) => w.manifest.type === 'custom' || w.manifest.type === 'compound')
       .map(async (w) => {
         const srcDir = path.join(w.widgetDir, 'src')
         await buildWidget(srcDir)

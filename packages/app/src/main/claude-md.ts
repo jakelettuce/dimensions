@@ -160,13 +160,21 @@ The SDK is automatically injected into every custom widget. Access it via \`wind
 - \`sdk.navigate.forward()\` \u2192 void
 
 ### Portal Control (requires "portal-control")
-- \`sdk.portal.navigate(portalId, url)\` \u2192 Promise<void>
-- \`sdk.portal.injectCSS(portalId, css)\` \u2192 Promise<void>
-- \`sdk.portal.removeCSS(portalId, key)\` \u2192 Promise<void>
-- \`sdk.portal.newTab(portalId, url?)\` \u2192 Promise<string>
-- \`sdk.portal.closeTab(portalId, tabId)\` \u2192 Promise<void>
-- \`sdk.portal.switchTab(portalId, tabId)\` \u2192 Promise<void>
-- \`sdk.portal.getState(portalId)\` \u2192 Promise<PortalState>
+Portals are bare content WCVs — no built-in chrome. Use \`sdk.portal.*\` to build your own chrome.
+
+- \`sdk.portal.navigate(portalId, url)\` \u2192 Promise<void> \u2014 Navigate to URL
+- \`sdk.portal.goBack(portalId)\` \u2192 Promise<void> \u2014 Navigate back
+- \`sdk.portal.goForward(portalId)\` \u2192 Promise<void> \u2014 Navigate forward
+- \`sdk.portal.reload(portalId)\` \u2192 Promise<void> \u2014 Reload current page
+- \`sdk.portal.stop(portalId)\` \u2192 Promise<void> \u2014 Stop loading
+- \`sdk.portal.setVisible(portalId, visible)\` \u2192 Promise<void> \u2014 Show/hide portal WCV
+- \`sdk.portal.injectCSS(portalId, css)\` \u2192 Promise<{key}> \u2014 Inject CSS, returns key for removal
+- \`sdk.portal.removeCSS(portalId, key)\` \u2192 Promise<void> \u2014 Remove injected CSS by key
+- \`sdk.portal.newTab(portalId, url?)\` \u2192 Promise<{tabId}> \u2014 Open new tab
+- \`sdk.portal.closeTab(portalId, tabId)\` \u2192 Promise<void> \u2014 Close tab (can't close last)
+- \`sdk.portal.switchTab(portalId, tabId)\` \u2192 Promise<void> \u2014 Switch active tab
+- \`sdk.portal.getState(portalId)\` \u2192 Promise<PortalState> \u2014 Get current state
+- \`sdk.portal.onStateChange(portalId, cb)\` \u2192 void \u2014 Subscribe to state changes (url, title, loading, canGoBack/Forward)
 
 ### Theme (requires "theme")
 - \`sdk.theme.get()\` \u2192 Promise<ThemeVars>
@@ -184,7 +192,7 @@ The SDK is automatically injected into every custom widget. Access it via \`wind
 \`\`\`json
 {
   "id": "my-widget",           // human-readable type name
-  "type": "custom|webportal|terminal",
+  "type": "custom|webportal|terminal|compound",
   "title": "Display Name",
   "capabilities": ["kv", "network", ...],
   "allowedHosts": ["api.example.com"],
@@ -192,11 +200,36 @@ The SDK is automatically injected into every custom widget. Access it via \`wind
   "envKeys": ["API_KEY"],
   "url": "https://...",        // webportal only
   "targetPortals": ["portal-id"],  // portal-control only
+  "children": [                    // compound only — child widgets
+    { "id": "child-portal", "type": "webportal", "url": "https://...", "layout": { "anchor": "fill" } }
+  ],
   "inputs": [{ "key": "name", "type": "string", "default": "value" }],
   "outputs": [{ "key": "name", "type": "string" }],
   "props": [{ "key": "name", "type": "string|number|boolean|select", "label": "Label", "default": "value" }]
 }
 \`\`\`
+
+## Compound Widgets (type: "compound")
+
+A compound widget contains child widgets laid out within its bounds. The compound's \`index.html\`
+renders the container UI (e.g. a browser chrome bar). Child portals are positioned as WCVs by the main process.
+
+### Creating a Browser (compound + portal)
+
+1. Create manifest with \`type: "compound"\`, \`capabilities: ["portal-control"]\`,
+   \`targetPortals: ["child-id"]\`, and \`children\` array
+2. Child layout anchors: \`top\` (fixed height), \`bottom\`, \`left\` (fixed width), \`right\`, \`fill\` (remaining space)
+3. The compound's \`index.html\` renders chrome UI and uses \`sdk.portal.*\` to control the child portal
+4. Use \`sdk.portal.onStateChange(childId, cb)\` to track URL, title, loading, navigation state
+
+### Creating a Chrome-less Embed
+
+Just use a standalone \`webportal\` widget — no compound needed. The portal renders at full widget bounds.
+Control it from any widget with \`portal-control\` capability and matching \`targetPortals\`.
+
+### Reference: _browser compound widget
+
+See \`widgets/_browser/\` for a complete example with URL bar, back/forward, reload, and loading indicator.
 
 ## Building Widgets
 

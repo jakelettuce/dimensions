@@ -1,17 +1,25 @@
-import { WebContentsView, ipcMain, shell } from 'electron'
+import { WebContentsView, ipcMain, shell, Menu, MenuItem, Notification, app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { ulid } from 'ulid'
 import { SECURE_WEB_PREFERENCES, DIMENSIONS_DIR } from './constants'
 import { extractAndSaveStylesheets, applyPortalRules } from './css-injection'
-import { generatePortalChromeHtml } from './portal-chrome-html'
 import type { DimensionsWindow } from './window-manager'
 import type { WidgetState } from './scene-manager'
 import type { Bounds } from './schemas'
 
-// ── Constants ──
+// ── Late-bound window getter (avoids circular dependency with window-manager) ──
 
-const CHROME_HEIGHT = 36
+let _getAllWindows: (() => DimensionsWindow[]) | null = null
+
+export function setWindowGetter(fn: () => DimensionsWindow[]): void {
+  _getAllWindows = fn
+}
+
+function getAllWindows(): DimensionsWindow[] {
+  if (!_getAllWindows) throw new Error('webportal-manager: window getter not initialized')
+  return _getAllWindows()
+}
 
 // ── Types ──
 
@@ -29,14 +37,12 @@ export interface TabState {
 export interface PortalInstance {
   widgetId: string
   widgetDir: string
-  chromeWCV: WebContentsView
   tabs: Map<string, TabState>
   activeTabId: string
-  injectedCSS: Map<string, string> // hostname -> css key, stored for reinjection on navigation
+  injectedCSS: Map<string, string>
 }
 
 // ── Portal registry ──
-// Keyed by widgetInstanceId, stores all portal instances across windows.
 
 const portals = new Map<string, PortalInstance>()
 
@@ -52,16 +58,6 @@ function createContentWCV(): WebContentsView {
   return new WebContentsView({
     webPreferences: {
       ...SECURE_WEB_PREFERENCES,
-      // NO preload — content WCVs are fully sandboxed
-    },
-  })
-}
-
-function createChromeWCV(): WebContentsView {
-  return new WebContentsView({
-    webPreferences: {
-      ...SECURE_WEB_PREFERENCES,
-      preload: path.join(__dirname, '../preload/portal-chrome.js'),
     },
   })
 }
@@ -75,22 +71,10 @@ function acquireContentWCV(dimWin: DimensionsWindow): WebContentsView {
   const existing = prewarmedContentWCVs.get(dimWin.id)
   if (existing) {
     prewarmedContentWCVs.delete(dimWin.id)
-    // Replenish in background
     setTimeout(() => warmContentWCV(dimWin), 0)
     return existing
   }
   return createContentWCV()
-}
-
-// ── Safe mouse event control ──
-
-function safeSetIgnoreMouseEvents(wcv: WebContentsView, ignore: boolean): void {
-  try {
-    // setIgnoreMouseEvents may be on the WCV itself (BaseView) not on webContents
-    if (typeof (wcv as any).setIgnoreMouseEvents === 'function') {
-      (wcv as any).setIgnoreMouseEvents(ignore)
-    }
-  } catch {}
 }
 
 // ── Bounds calculation ──
@@ -104,63 +88,43 @@ interface SceneBounds {
   scrollY?: number
 }
 
-const MIN_VISIBLE_SIZE = 40 // hide portal if smaller than this
+const MIN_VISIBLE_SIZE = 40
 
 function calculatePortalBounds(
   widgetBounds: Bounds,
   scene: SceneBounds,
   scale: number = 1,
-): { chrome: Electron.Rectangle; content: Electron.Rectangle; hidden: boolean } {
+): { bounds: Electron.Rectangle; hidden: boolean } {
   const scrollX = scene.scrollX || 0
   const scrollY = scene.scrollY || 0
 
-  // Widget position adjusted for scroll, scaled
   let absX = Math.round(widgetBounds.x * scale + scene.x - scrollX)
   let absY = Math.round(widgetBounds.y * scale + scene.y - scrollY)
   let width = Math.round(widgetBounds.width * scale)
   let height = Math.round(widgetBounds.height * scale)
 
-  // Clamp left edge: if portal starts before scene left edge
+  // Clamp to scene edges
   if (absX < scene.x) {
-    const clip = scene.x - absX
-    width -= clip
+    width -= scene.x - absX
     absX = scene.x
   }
-
-  // Clamp top edge
   if (absY < scene.y) {
-    const clip = scene.y - absY
-    height -= clip
+    height -= scene.y - absY
     absY = scene.y
   }
-
-  // Clamp right edge
   if (scene.width != null) {
     const maxRight = scene.x + scene.width
-    if (absX + width > maxRight) {
-      width = maxRight - absX
-    }
+    if (absX + width > maxRight) width = maxRight - absX
   }
-
-  // Clamp bottom edge
   if (scene.height != null) {
     const maxBottom = scene.y + scene.height
-    if (absY + height > maxBottom) {
-      height = maxBottom - absY
-    }
+    if (absY + height > maxBottom) height = maxBottom - absY
   }
 
-  // Hide if too small
   const hidden = width < MIN_VISIBLE_SIZE || height < MIN_VISIBLE_SIZE
 
   return {
-    chrome: { x: absX, y: absY, width: Math.max(0, width), height: CHROME_HEIGHT },
-    content: {
-      x: absX,
-      y: absY + CHROME_HEIGHT,
-      width: Math.max(0, width),
-      height: Math.max(0, height - CHROME_HEIGHT),
-    },
+    bounds: { x: absX, y: absY, width: Math.max(0, width), height: Math.max(0, height) },
     hidden,
   }
 }
@@ -168,82 +132,71 @@ function calculatePortalBounds(
 // ── Tab helpers ──
 
 function getHostname(url: string): string {
-  try {
-    return new URL(url).hostname
-  } catch {
-    return ''
-  }
+  try { return new URL(url).hostname } catch { return '' }
 }
 
-function buildTabListForChrome(portal: PortalInstance): Array<{
-  id: string
-  title: string
-  active: boolean
-  isPlayingAudio: boolean
-}> {
-  const list: Array<{
-    id: string
-    title: string
-    active: boolean
-    isPlayingAudio: boolean
-  }> = []
-  for (const [id, tab] of portal.tabs) {
-    list.push({
-      id,
-      title: tab.title || 'New Tab',
-      active: id === portal.activeTabId,
-      isPlayingAudio: tab.isPlayingAudio,
-    })
-  }
-  return list
-}
+// ── Portal state notifications ──
+// When portal state changes, notify subscribing widgets via the scene WCV.
 
-function sendNavUpdate(portal: PortalInstance): void {
+function getPortalState(portal: PortalInstance) {
   const tab = portal.tabs.get(portal.activeTabId)
-  if (!tab) return
-  const wc = portal.chromeWCV.webContents
-  if (wc.isDestroyed()) return
-
-  wc.send('portal:navUpdate', {
-    url: tab.url,
-    loading: tab.isLoading,
-    canGoBack: tab.canGoBack,
-    canGoForward: tab.canGoForward,
-  })
+  return {
+    url: tab?.url ?? '',
+    title: tab?.title ?? '',
+    isLoading: tab?.isLoading ?? false,
+    canGoBack: tab?.canGoBack ?? false,
+    canGoForward: tab?.canGoForward ?? false,
+    isPlayingAudio: tab?.isPlayingAudio ?? false,
+    activeTabId: portal.activeTabId,
+    tabs: Array.from(portal.tabs.entries()).map(([id, t]) => ({
+      id,
+      url: t.url,
+      title: t.title,
+      isLoading: t.isLoading,
+      canGoBack: t.canGoBack,
+      canGoForward: t.canGoForward,
+      isActive: id === portal.activeTabId,
+    })),
+  }
 }
 
-function sendTabsUpdate(portal: PortalInstance): void {
-  const wc = portal.chromeWCV.webContents
-  if (wc.isDestroyed()) return
-  wc.send('portal:tabsUpdate', buildTabListForChrome(portal))
+function notifyPortalStateChange(portal: PortalInstance): void {
+  const fullId = portal.widgetId // e.g. "compoundId:childId" or standalone "widgetId"
+  const colonIdx = fullId.indexOf(':')
+  // For compound children, the owning widget is the compound (before the colon)
+  const ownerWidgetId = colonIdx !== -1 ? fullId.substring(0, colonIdx) : fullId
+  // Short ID is the child ID (after the colon), or the full ID for standalone portals
+  const shortId = colonIdx !== -1 ? fullId.substring(colonIdx + 1) : fullId
+
+  for (const dimWin of getAllWindows() as DimensionsWindow[]) {
+    if (!dimWin.currentScene?.widgets.has(ownerWidgetId)) continue
+    if (dimWin.sceneWCV.webContents.isDestroyed()) continue
+    const state = getPortalState(portal)
+    // Send both full and short portalId so SDK widgets can match by either
+    dimWin.sceneWCV.webContents.send('scene:portal-state-update', {
+      portalId: fullId,
+      shortPortalId: shortId,
+      state,
+    })
+    break
+  }
 }
 
 // ── CSS injection helpers ──
 
-async function injectCSSForTab(
-  tab: TabState,
-  portal: PortalInstance,
-): Promise<void> {
+async function injectCSSForTab(tab: TabState, portal: PortalInstance): Promise<void> {
   const wc = tab.contentWCV.webContents
   if (wc.isDestroyed()) return
-
   const hostname = getHostname(tab.url)
   if (!hostname) return
-
-  // Apply portal-rules.json rules
   await applyPortalRules(wc, portal.widgetDir, hostname).catch(() => {})
 }
 
-async function extractCSSForTab(
-  tab: TabState,
-  portal: PortalInstance,
-): Promise<void> {
+async function extractCSSForTab(tab: TabState, portal: PortalInstance): Promise<void> {
   const wc = tab.contentWCV.webContents
   if (wc.isDestroyed()) return
-
   const hostname = getHostname(tab.url)
   if (!hostname) return
-
   await extractAndSaveStylesheets(wc, portal.widgetDir, hostname).catch(() => {})
 }
 
@@ -256,7 +209,6 @@ function wireContentWCVEvents(
 ): void {
   const wc = tab.contentWCV.webContents
 
-  // Block popups — open http/https externally, deny everything else
   wc.setWindowOpenHandler(({ url }) => {
     try {
       const parsed = new URL(url)
@@ -267,14 +219,13 @@ function wireContentWCVEvents(
     return { action: 'deny' }
   })
 
-  // Navigation events
   wc.on('did-start-navigation', (_event, url) => {
     if (wc.isDestroyed()) return
     tab.url = url
     tab.isLoading = true
     tab.canGoBack = wc.navigationHistory.canGoBack()
     tab.canGoForward = wc.navigationHistory.canGoForward()
-    if (tab.id === portal.activeTabId) sendNavUpdate(portal)
+    if (tab.id === portal.activeTabId) notifyPortalStateChange(portal)
   })
 
   wc.on('did-navigate', (_event, url) => {
@@ -282,8 +233,7 @@ function wireContentWCVEvents(
     tab.url = url
     tab.canGoBack = wc.navigationHistory.canGoBack()
     tab.canGoForward = wc.navigationHistory.canGoForward()
-    if (tab.id === portal.activeTabId) sendNavUpdate(portal)
-    sendTabsUpdate(portal)
+    if (tab.id === portal.activeTabId) notifyPortalStateChange(portal)
   })
 
   wc.on('did-navigate-in-page', (_event, url) => {
@@ -291,48 +241,100 @@ function wireContentWCVEvents(
     tab.url = url
     tab.canGoBack = wc.navigationHistory.canGoBack()
     tab.canGoForward = wc.navigationHistory.canGoForward()
-    if (tab.id === portal.activeTabId) sendNavUpdate(portal)
+    if (tab.id === portal.activeTabId) notifyPortalStateChange(portal)
   })
 
   wc.on('page-title-updated', (_event, title) => {
     if (wc.isDestroyed()) return
     tab.title = title
-    sendTabsUpdate(portal)
+    notifyPortalStateChange(portal)
   })
 
-  // CSS injection on dom-ready (NOT did-finish-load)
   wc.on('dom-ready', () => {
     if (wc.isDestroyed()) return
     injectCSSForTab(tab, portal).catch(() => {})
   })
 
-  // CSS extraction on did-finish-load
   wc.on('did-finish-load', () => {
     if (wc.isDestroyed()) return
     tab.isLoading = false
     tab.canGoBack = wc.navigationHistory.canGoBack()
     tab.canGoForward = wc.navigationHistory.canGoForward()
-    if (tab.id === portal.activeTabId) sendNavUpdate(portal)
+    if (tab.id === portal.activeTabId) notifyPortalStateChange(portal)
     extractCSSForTab(tab, portal).catch(() => {})
   })
 
   wc.on('did-fail-load', () => {
     if (wc.isDestroyed()) return
     tab.isLoading = false
-    if (tab.id === portal.activeTabId) sendNavUpdate(portal)
+    if (tab.id === portal.activeTabId) notifyPortalStateChange(portal)
   })
 
-  // Audio state
   wc.on('media-started-playing', () => {
     if (wc.isDestroyed()) return
     tab.isPlayingAudio = true
-    sendTabsUpdate(portal)
+    notifyPortalStateChange(portal)
   })
 
   wc.on('media-paused', () => {
     if (wc.isDestroyed()) return
     tab.isPlayingAudio = false
-    sendTabsUpdate(portal)
+    notifyPortalStateChange(portal)
+  })
+
+  // ── Copy/paste: let standard editing shortcuts pass through to Chromium ──
+  wc.on('before-input-event', (_event, input) => {
+    if (input.meta || input.control) {
+      const key = input.key.toLowerCase()
+      if (['c', 'v', 'x', 'a', 'z'].includes(key)) {
+        return // Don't prevent default — Chromium handles natively
+      }
+    }
+  })
+
+  // ── Downloads: auto-save to ~/Downloads with notification ──
+  wc.session.on('will-download', (_event, item) => {
+    const defaultPath = path.join(app.getPath('downloads'), item.getFilename())
+    item.setSavePath(defaultPath)
+
+    item.on('done', (_e, state) => {
+      if (state === 'completed') {
+        new Notification({
+          title: 'Download Complete',
+          body: item.getFilename(),
+        }).show()
+      }
+    })
+  })
+
+  // ── Right-click context menu ──
+  wc.on('context-menu', (_event, params) => {
+    const menu = new Menu()
+
+    if (params.selectionText) {
+      menu.append(new MenuItem({ label: 'Copy', role: 'copy' }))
+    }
+    if (params.linkURL) {
+      menu.append(new MenuItem({
+        label: 'Open Link in Browser',
+        click: () => shell.openExternal(params.linkURL).catch(() => {}),
+      }))
+    }
+    if (params.srcURL && params.mediaType === 'image') {
+      menu.append(new MenuItem({
+        label: 'Save Image',
+        click: () => { if (!wc.isDestroyed()) wc.downloadURL(params.srcURL) },
+      }))
+    }
+    if (params.isEditable) {
+      menu.append(new MenuItem({ label: 'Cut', role: 'cut' }))
+      menu.append(new MenuItem({ label: 'Copy', role: 'copy' }))
+      menu.append(new MenuItem({ label: 'Paste', role: 'paste' }))
+    }
+
+    if (menu.items.length > 0) {
+      menu.popup()
+    }
   })
 }
 
@@ -360,29 +362,18 @@ function createTab(
   portal.tabs.set(tabId, tab)
   wireContentWCVEvents(tab, portal, dimWin)
 
-  // Attach the contentWCV before the chromeWCV to maintain z-order:
-  // contentWCV goes below chromeWCV
   if (!dimWin.browserWindow.isDestroyed()) {
-    const contentView = dimWin.browserWindow.contentView
+    dimWin.browserWindow.contentView.addChildView(contentWCV)
 
-    // Insert content WCV just before the chrome WCV to maintain z-order
-    // Remove chrome temporarily, add content, re-add chrome on top
-    try { contentView.removeChildView(portal.chromeWCV) } catch {}
-    contentView.addChildView(contentWCV)
-    contentView.addChildView(portal.chromeWCV)
-
-    // Set bounds for the new content WCV
     const sceneBounds = dimWin.sceneWCV.getBounds()
     const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
     if (widgetBounds) {
-      const bounds = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
-      contentWCV.setBounds(bounds.content)
+      const { bounds } = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
+      contentWCV.setBounds(bounds)
     }
   }
 
-  // Fire-and-forget load
   contentWCV.webContents.loadURL(url).catch(() => {})
-
   return tab
 }
 
@@ -394,12 +385,10 @@ function destroyTabWCV(tab: TabState, dimWin: DimensionsWindow): void {
       'document.querySelectorAll("video,audio").forEach(el=>{el.pause();el.src=""})',
     ).catch(() => {})
   }
-  try {
-    dimWin.browserWindow.contentView.removeChildView(tab.contentWCV)
-  } catch {}
+  try { dimWin.browserWindow.contentView.removeChildView(tab.contentWCV) } catch {}
 }
 
-function closeTab(
+function closeTabInternal(
   portal: PortalInstance,
   tabId: string,
   dimWin: DimensionsWindow,
@@ -410,37 +399,27 @@ function closeTab(
   destroyTabWCV(tab, dimWin)
   portal.tabs.delete(tabId)
 
-  // If no tabs remain, this is unusual — the portal itself should be destroyed
   if (portal.tabs.size === 0) return
 
-  // If closing the active tab, switch to an adjacent tab
   if (portal.activeTabId === tabId) {
     const tabIds = Array.from(portal.tabs.keys())
     portal.activeTabId = tabIds[tabIds.length - 1]
 
-    // Show the new active tab's content WCV
     const newActiveTab = portal.tabs.get(portal.activeTabId)
     if (newActiveTab && !dimWin.browserWindow.isDestroyed()) {
-      const contentView = dimWin.browserWindow.contentView
-      // Re-add content WCV just before chrome WCV
-      try { contentView.removeChildView(portal.chromeWCV) } catch {}
-      try { contentView.removeChildView(newActiveTab.contentWCV) } catch {}
-      contentView.addChildView(newActiveTab.contentWCV)
-      contentView.addChildView(portal.chromeWCV)
+      try { dimWin.browserWindow.contentView.removeChildView(newActiveTab.contentWCV) } catch {}
+      dimWin.browserWindow.contentView.addChildView(newActiveTab.contentWCV)
 
-      // Set correct bounds
       const sceneBounds = dimWin.sceneWCV.getBounds()
       const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
       if (widgetBounds) {
-        const bounds = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
-        newActiveTab.contentWCV.setBounds(bounds.content)
+        const { bounds } = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
+        newActiveTab.contentWCV.setBounds(bounds)
       }
     }
 
-    sendNavUpdate(portal)
+    notifyPortalStateChange(portal)
   }
-
-  sendTabsUpdate(portal)
 }
 
 export function switchPortalTab(
@@ -455,57 +434,78 @@ export function switchPortalTab(
   const newTab = portal.tabs.get(tabId)
   if (!newTab) return
 
-  // Hide old tab's content WCV
   if (oldTab && !dimWin.browserWindow.isDestroyed()) {
-    try {
-      dimWin.browserWindow.contentView.removeChildView(oldTab.contentWCV)
-    } catch {}
-
-    // Throttle inactive tab unless playing audio
+    try { dimWin.browserWindow.contentView.removeChildView(oldTab.contentWCV) } catch {}
     if (!oldTab.isPlayingAudio) {
-      try {
-        oldTab.contentWCV.webContents.setBackgroundThrottling(true)
-      } catch {}
+      try { oldTab.contentWCV.webContents.setBackgroundThrottling(true) } catch {}
     }
   }
 
   portal.activeTabId = tabId
 
-  // Show new tab's content WCV
   if (!dimWin.browserWindow.isDestroyed()) {
-    const contentView = dimWin.browserWindow.contentView
-    // Maintain z-order: content below chrome
-    try { contentView.removeChildView(portal.chromeWCV) } catch {}
-    try { contentView.removeChildView(newTab.contentWCV) } catch {}
-    contentView.addChildView(newTab.contentWCV)
-    contentView.addChildView(portal.chromeWCV)
+    try { dimWin.browserWindow.contentView.removeChildView(newTab.contentWCV) } catch {}
+    dimWin.browserWindow.contentView.addChildView(newTab.contentWCV)
 
-    // Set correct bounds
     const sceneBounds = dimWin.sceneWCV.getBounds()
     const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
     if (widgetBounds) {
-      const bounds = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
-      newTab.contentWCV.setBounds(bounds.content)
+      const { bounds } = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
+      newTab.contentWCV.setBounds(bounds)
     }
 
-    // Un-throttle the newly active tab
-    try {
-      newTab.contentWCV.webContents.setBackgroundThrottling(false)
-    } catch {}
+    try { newTab.contentWCV.webContents.setBackgroundThrottling(false) } catch {}
   }
 
-  sendNavUpdate(portal)
-  sendTabsUpdate(portal)
+  notifyPortalStateChange(portal)
+}
+
+// ── Exported tab management for capability module ──
+
+export function createPortalTab(
+  portalId: string,
+  url: string,
+): string | null {
+  const portal = portals.get(portalId)
+  if (!portal) return null
+
+  for (const dimWin of getAllWindows()) {
+    if (!dimWin.currentScene?.widgets.has(portal.widgetId)) continue
+
+    const oldTab = portal.tabs.get(portal.activeTabId)
+    if (oldTab && !dimWin.browserWindow.isDestroyed()) {
+      try { dimWin.browserWindow.contentView.removeChildView(oldTab.contentWCV) } catch {}
+    }
+
+    const newTab = createTab(portal, dimWin, url || 'about:blank')
+    portal.activeTabId = newTab.id
+    notifyPortalStateChange(portal)
+    return newTab.id
+  }
+  return null
+}
+
+export function closePortalTab(
+  portalId: string,
+  tabId: string,
+): boolean {
+  const portal = portals.get(portalId)
+  if (!portal) return false
+  if (portal.tabs.size <= 1) return false
+  if (!portal.tabs.has(tabId)) return false
+
+  for (const dimWin of getAllWindows()) {
+    if (!dimWin.currentScene?.widgets.has(portal.widgetId)) continue
+    closeTabInternal(portal, tabId, dimWin)
+    return true
+  }
+  return false
 }
 
 // ── Widget bounds helper ──
 
-function getWidgetBounds(
-  dimWin: DimensionsWindow,
-  widgetId: string,
-): Bounds | null {
+function getWidgetBounds(dimWin: DimensionsWindow, widgetId: string): Bounds | null {
   if (!dimWin.currentScene) return null
-  // In layout mode, check layoutWidgetBounds first
   if (dimWin.currentScene.layoutMode === 'layout') {
     return dimWin.layoutWidgetBounds.get(widgetId) ?? null
   }
@@ -513,56 +513,10 @@ function getWidgetBounds(
   return entry?.bounds ?? null
 }
 
-// ── Chrome WCV setup ──
-
-function loadChromeWCV(
-  chromeWCV: WebContentsView,
-  portalId: string,
-  dimWin: DimensionsWindow,
-): void {
-  const html = generatePortalChromeHtml(portalId)
-  const scenePath = dimWin.currentScene?.path
-  if (!scenePath) return
-
-  // Write chrome HTML to a temp file in the scene directory
-  const filename = `.portal-chrome-${portalId}.html`
-  const filePath = path.join(scenePath, filename)
-  fs.writeFileSync(filePath, html, 'utf-8')
-
-  // Build dimensions-asset:// URL
-  const relPath = path.relative(DIMENSIONS_DIR, filePath).split(path.sep).join('/')
-  const assetUrl = `dimensions-asset://${relPath}?portalId=${encodeURIComponent(portalId)}`
-
-  chromeWCV.webContents.loadURL(assetUrl).catch((err) => {
-    console.error(`Failed to load portal chrome for ${portalId}:`, err)
-  })
-}
-
-// ── Portal lookup by widgetId ──
-
-function findPortal(widgetId: string): PortalInstance | undefined {
-  return portals.get(widgetId)
-}
-
-function findPortalAndWindow(
-  widgetId: string,
-  allWindows: () => DimensionsWindow[],
-): { portal: PortalInstance; dimWin: DimensionsWindow } | undefined {
-  const portal = portals.get(widgetId)
-  if (!portal) return undefined
-
-  for (const dimWin of allWindows()) {
-    if (dimWin.currentScene?.widgets.has(widgetId)) {
-      return { portal, dimWin }
-    }
-  }
-  return undefined
-}
-
 // ── Public API ──
 
 /**
- * Mount a single webportal widget with chrome + content WCVs.
+ * Mount a single webportal widget — just a content WCV, no chrome.
  */
 export function mountWebportal(
   dimWin: DimensionsWindow,
@@ -576,16 +530,13 @@ export function mountWebportal(
     return
   }
 
-  // Clean up any existing portal for this widget
   if (portals.has(widgetInstanceId)) {
     destroyPortal(dimWin, widgetInstanceId)
   }
 
-  const chromeWCV = createChromeWCV()
   const portal: PortalInstance = {
     widgetId: widgetInstanceId,
     widgetDir: widget.widgetDir,
-    chromeWCV,
     tabs: new Map(),
     activeTabId: '',
     injectedCSS: new Map(),
@@ -593,56 +544,80 @@ export function mountWebportal(
 
   portals.set(widgetInstanceId, portal)
 
-  // Calculate bounds (accounting for current zoom/scale)
   const sceneBounds = dimWin.sceneWCV.getBounds()
-  const bounds = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
+  const { bounds } = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
 
-  // Create the first tab (content WCV)
   const tab = createTab(portal, dimWin, widget.manifest.url)
   portal.activeTabId = tab.id
 
-  // Attach chrome WCV AFTER content WCV (chrome must be on top)
-  dimWin.browserWindow.contentView.addChildView(chromeWCV)
+  tab.contentWCV.setBounds(bounds)
 
-  // Note: createTab already added contentWCV and re-added chromeWCV,
-  // but chromeWCV wasn't added yet at that point. Re-establish z-order.
-  const contentView = dimWin.browserWindow.contentView
-  try { contentView.removeChildView(chromeWCV) } catch {}
-  try { contentView.removeChildView(tab.contentWCV) } catch {}
-  contentView.addChildView(tab.contentWCV)
-  contentView.addChildView(chromeWCV)
-
-  // Set bounds
-  tab.contentWCV.setBounds(bounds.content)
-  chromeWCV.setBounds(bounds.chrome)
-
-  // Track in the window's portal map (for legacy compatibility)
-  dimWin.portalWCVs.set(widgetInstanceId, chromeWCV)
-
-  // Load the chrome HTML
-  loadChromeWCV(chromeWCV, widgetInstanceId, dimWin)
-
+  dimWin.portalWCVs.set(widgetInstanceId, tab.contentWCV)
 }
 
 /**
- * Mount all webportal widgets for the current scene.
+ * Mount a compound child webportal.
+ * Uses `compoundId:childId` as the portal key.
+ * Initial bounds are set offscreen — repositioned via reportWidgetBounds from ResizeObserver.
+ */
+export function mountCompoundChildPortal(
+  dimWin: DimensionsWindow,
+  compoundInstanceId: string,
+  childId: string,
+  url: string,
+  widget: WidgetState,
+): void {
+  if (dimWin.browserWindow.isDestroyed()) return
+
+  const portalKey = `${compoundInstanceId}:${childId}`
+
+  if (portals.has(portalKey)) {
+    destroyPortal(dimWin, portalKey)
+  }
+
+  const portal: PortalInstance = {
+    widgetId: portalKey,
+    widgetDir: widget.widgetDir,
+    tabs: new Map(),
+    activeTabId: '',
+    injectedCSS: new Map(),
+  }
+
+  portals.set(portalKey, portal)
+
+  const tab = createTab(portal, dimWin, url)
+  portal.activeTabId = tab.id
+
+  // Start offscreen — repositioned when ResizeObserver reports bounds
+  tab.contentWCV.setBounds({ x: -9999, y: -9999, width: 0, height: 0 })
+  dimWin.portalWCVs.set(portalKey, tab.contentWCV)
+}
+
+/**
+ * Mount all webportal widgets for the current scene (standalone + compound children).
  */
 export function mountAllWebportals(dimWin: DimensionsWindow): void {
   if (!dimWin.currentScene) return
 
   for (const entry of dimWin.currentScene.meta.widgets) {
     const widget = dimWin.currentScene.widgets.get(entry.id)
-    if (!widget || widget.manifest.type !== 'webportal') continue
-    const bounds = entry.bounds ?? { x: 0, y: 0, width: 400, height: 300 }
-    mountWebportal(dimWin, entry.id, widget, bounds)
+    if (!widget) continue
+
+    if (widget.manifest.type === 'webportal') {
+      const bounds = entry.bounds ?? { x: 0, y: 0, width: 400, height: 300 }
+      mountWebportal(dimWin, entry.id, widget, bounds)
+    } else if (widget.manifest.type === 'compound' && widget.manifest.children) {
+      for (const child of widget.manifest.children) {
+        if (child.type === 'webportal' && child.url) {
+          mountCompoundChildPortal(dimWin, entry.id, child.id, child.url, widget)
+        }
+      }
+    }
   }
 }
 
-/**
- * Recalculate and apply bounds for all portals in a window.
- * Called when scene WCV bounds change (edit mode toggle, window resize).
- */
-// Store current scroll offset per window
+// ── Scroll tracking ──
+
 const sceneScrollOffsets = new Map<string, { scrollX: number; scrollY: number }>()
 
 export function setSceneScroll(dimWin: DimensionsWindow, scrollX: number, scrollY: number): void {
@@ -650,6 +625,9 @@ export function setSceneScroll(dimWin: DimensionsWindow, scrollX: number, scroll
   repositionPortals(dimWin)
 }
 
+/**
+ * Recalculate and apply bounds for all portals in a window.
+ */
 export function repositionPortals(dimWin: DimensionsWindow): void {
   if (dimWin.browserWindow.isDestroyed() || !dimWin.currentScene) return
 
@@ -658,42 +636,62 @@ export function repositionPortals(dimWin: DimensionsWindow): void {
   const sceneBounds: SceneBounds = { ...rawBounds, ...scroll }
   const isLayoutMode = dimWin.currentScene.layoutMode === 'layout'
 
+  // Collect all portal IDs to reposition (standalone + compound children)
+  const portalIds: string[] = []
   for (const entry of dimWin.currentScene.meta.widgets) {
-    const portal = portals.get(entry.id)
+    const widget = dimWin.currentScene.widgets.get(entry.id)
+    if (!widget) continue
+    if (widget.manifest.type === 'webportal') {
+      portalIds.push(entry.id)
+    } else if (widget.manifest.type === 'compound' && widget.manifest.children) {
+      for (const child of widget.manifest.children) {
+        if (child.type === 'webportal') {
+          portalIds.push(`${entry.id}:${child.id}`)
+        }
+      }
+    }
+  }
+
+  // Scene bounds without scroll — for layoutWidgetBounds entries whose coords
+  // already account for scroll (they come from getBoundingClientRect).
+  const sceneBoundsNoScroll: SceneBounds = { ...rawBounds, scrollX: 0, scrollY: 0 }
+
+  for (const portalId of portalIds) {
+    const portal = portals.get(portalId)
     if (!portal) continue
 
-    const widget = dimWin.currentScene.widgets.get(entry.id)
-    if (!widget || widget.manifest.type !== 'webportal') continue
-
-    let widgetBounds: Bounds
+    let widgetBounds: Bounds | undefined
     let scale: number
+    let usedSceneBounds: SceneBounds
 
-    if (isLayoutMode) {
-      // In layout mode, use reported bounds from <dimensions-widget> placeholders
-      // These are already in scene-relative coordinates (from getBoundingClientRect)
-      const layoutBounds = dimWin.layoutWidgetBounds.get(entry.id)
-      if (!layoutBounds) continue
-      // Layout bounds are already in screen-relative coords from the scene WCV,
-      // so we pass them directly with scale=1 (zoom already applied in CSS)
+    // Compound child portals and layout mode portals use layoutWidgetBounds.
+    // These bounds are from getBoundingClientRect (WCV-viewport coords, already scroll-adjusted).
+    // Don't subtract scroll again.
+    const layoutBounds = dimWin.layoutWidgetBounds.get(portalId)
+    if (layoutBounds) {
       widgetBounds = layoutBounds
-      scale = 1 // bounds already account for zoom via CSS transform
-    } else {
-      // Canvas mode: use meta.json bounds, apply totalScale
+      scale = 1
+      usedSceneBounds = sceneBoundsNoScroll
+    } else if (!portalId.includes(':')) {
+      // Standalone portal in canvas mode — design-space coords, needs scroll + scale
+      const entry = dimWin.currentScene.meta.widgets.find((w) => w.id === portalId)
+      if (!entry) continue
       widgetBounds = entry.bounds ?? { x: 0, y: 0, width: 400, height: 300 }
       scale = dimWin.totalScale
+      usedSceneBounds = sceneBounds
+    } else {
+      continue
     }
 
-    const bounds = calculatePortalBounds(widgetBounds, sceneBounds, scale)
+    const { bounds, hidden } = calculatePortalBounds(widgetBounds, usedSceneBounds, scale)
 
-    if (bounds.hidden) {
-      const offscreen = { x: -9999, y: -9999, width: 0, height: 0 }
-      portal.chromeWCV.setBounds(offscreen)
-      const activeTab = portal.tabs.get(portal.activeTabId)
-      if (activeTab) activeTab.contentWCV.setBounds(offscreen)
+    const activeTab = portal.tabs.get(portal.activeTabId)
+    if (!activeTab) continue
+
+    if (hidden) {
+      activeTab.contentWCV.setBounds({ x: -9999, y: -9999, width: 0, height: 0 })
     } else {
-      portal.chromeWCV.setBounds(bounds.chrome)
-      const activeTab = portal.tabs.get(portal.activeTabId)
-      if (activeTab) activeTab.contentWCV.setBounds(bounds.content)
+      activeTab.contentWCV.setBounds(bounds)
     }
   }
 }
@@ -705,33 +703,11 @@ export function destroyPortal(dimWin: DimensionsWindow, widgetId: string): void 
   const portal = portals.get(widgetId)
   if (!portal) return
 
-  // Destroy all tabs
   for (const [, tab] of portal.tabs) {
     destroyTabWCV(tab, dimWin)
   }
   portal.tabs.clear()
 
-  // Remove chrome WCV
-  if (!dimWin.browserWindow.isDestroyed()) {
-    try {
-      dimWin.browserWindow.contentView.removeChildView(portal.chromeWCV)
-    } catch {}
-  }
-  try {
-    const chromeWC = portal.chromeWCV.webContents
-    if (!chromeWC.isDestroyed()) {
-      chromeWC.setAudioMuted(true)
-    }
-  } catch {}
-
-  // Clean up temp chrome HTML file
-  if (dimWin.currentScene?.path) {
-    const filename = `.portal-chrome-${widgetId}.html`
-    const filePath = path.join(dimWin.currentScene.path, filename)
-    try { fs.unlinkSync(filePath) } catch {}
-  }
-
-  // Remove from registries
   portals.delete(widgetId)
   dimWin.portalWCVs.delete(widgetId)
 }
@@ -742,29 +718,40 @@ export function destroyPortal(dimWin: DimensionsWindow, widgetId: string): void 
 export function destroyAllPortals(dimWin: DimensionsWindow): void {
   if (!dimWin.currentScene) return
 
-  // Collect widget IDs that belong to this window
-  const widgetIds = Array.from(dimWin.currentScene.widgets.keys()).filter(
-    (id) => portals.has(id),
-  )
-
-  for (const widgetId of widgetIds) {
-    destroyPortal(dimWin, widgetId)
+  // Collect all portal IDs belonging to this scene (standalone + compound children)
+  const portalIdsToDestroy: string[] = []
+  for (const [portalId] of portals) {
+    // Standalone portal: key matches a widget ID in the scene
+    if (dimWin.currentScene.widgets.has(portalId)) {
+      portalIdsToDestroy.push(portalId)
+      continue
+    }
+    // Compound child: key is "compoundId:childId"
+    const colonIdx = portalId.indexOf(':')
+    if (colonIdx !== -1) {
+      const compoundId = portalId.substring(0, colonIdx)
+      if (dimWin.currentScene.widgets.has(compoundId)) {
+        portalIdsToDestroy.push(portalId)
+      }
+    }
   }
 
-  // Also clean up any orphaned pre-warmed WCVs for this window
+  for (const portalId of portalIdsToDestroy) {
+    destroyPortal(dimWin, portalId)
+  }
+
   const prewarmed = prewarmedContentWCVs.get(dimWin.id)
   if (prewarmed) {
     try {
       const wc = prewarmed.webContents
-      if (!wc.isDestroyed()) {
-        wc.setAudioMuted(true)
-      }
+      if (!wc.isDestroyed()) wc.setAudioMuted(true)
     } catch {}
     prewarmedContentWCVs.delete(dimWin.id)
   }
 }
 
-// JS + CSS injected into portal WCVs to block interaction and capture clicks
+// ── Edit mode freeze ──
+
 const FREEZE_CSS = `
   body::after {
     content: '';
@@ -776,7 +763,6 @@ const FREEZE_CSS = `
   }
 `
 
-// JS that creates a click-capturing overlay. Posts message to Electron via IPC.
 function freezeJS(widgetId: string): string {
   return `
     (function() {
@@ -785,13 +771,10 @@ function freezeJS(widgetId: string): string {
       overlay.id = '__dim_freeze_overlay';
       overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;cursor:default;';
       overlay.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
       }, true);
       overlay.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
       }, true);
       document.documentElement.appendChild(overlay);
     })();
@@ -805,7 +788,6 @@ const UNFREEZE_JS = `
   })();
 `
 
-// Track freeze state per portal
 const frozenState = new Map<string, {
   cssKeys: string[]
   listeners: Array<() => void>
@@ -819,41 +801,44 @@ function injectFreeze(wc: Electron.WebContents, widgetId: string, cssKeys: strin
 
 function removeFreeze(wc: Electron.WebContents, cssKeys: string[]): void {
   if (wc.isDestroyed()) return
-  for (const key of cssKeys) {
-    wc.removeInsertedCSS(key).catch(() => {})
-  }
+  for (const key of cssKeys) wc.removeInsertedCSS(key).catch(() => {})
   wc.executeJavaScript(UNFREEZE_JS).catch(() => {})
 }
 
-/**
- * Freeze or unfreeze all portal WCVs for a window (used during edit mode).
- * Freeze: inject overlay div that blocks ALL mouse events + dim CSS.
- * Click on frozen portal sends widget:select via IPC for selection.
- * Re-injects on navigation so new pages are also frozen.
- */
 export function freezePortals(dimWin: DimensionsWindow, freeze: boolean): void {
   if (!dimWin.currentScene || dimWin.browserWindow.isDestroyed()) return
 
+  // Collect all portal IDs for this scene (standalone + compound children)
+  const portalIds: Array<{ portalId: string; ownerWidgetId: string }> = []
   for (const entry of dimWin.currentScene.meta.widgets) {
-    const portal = portals.get(entry.id)
+    const widget = dimWin.currentScene.widgets.get(entry.id)
+    if (!widget) continue
+    if (widget.manifest.type === 'webportal') {
+      portalIds.push({ portalId: entry.id, ownerWidgetId: entry.id })
+    } else if (widget.manifest.type === 'compound' && widget.manifest.children) {
+      for (const child of widget.manifest.children) {
+        if (child.type === 'webportal') {
+          portalIds.push({ portalId: `${entry.id}:${child.id}`, ownerWidgetId: entry.id })
+        }
+      }
+    }
+  }
+
+  for (const { portalId, ownerWidgetId } of portalIds) {
+    const portal = portals.get(portalId)
     if (!portal) continue
-    const widgetId = entry.id
+    const widgetId = ownerWidgetId
 
     if (freeze) {
       const cssKeys: string[] = []
       const listeners: Array<() => void> = []
 
-      // Freeze chrome
-      injectFreeze(portal.chromeWCV.webContents, widgetId, cssKeys)
-
-      // Freeze all tab content + listen for navigation to re-freeze
       for (const [, tab] of portal.tabs) {
         const contentWC = tab.contentWCV.webContents
         injectFreeze(contentWC, widgetId, cssKeys)
 
         const navHandler = () => {
           if (dimWin.editMode) {
-            // Small delay for page to load before injecting
             setTimeout(() => injectFreeze(contentWC, widgetId, cssKeys), 200)
           }
         }
@@ -863,21 +848,11 @@ export function freezePortals(dimWin: DimensionsWindow, freeze: boolean): void {
         }
       }
 
-      // Listen for clicks on portal WCVs to select the widget
-      // Use webContents 'ipc-message' with a custom channel injected via the overlay
-      // Simpler: use webContents.on('input-event') — not available
-      // Simplest: the overlay blocks interaction. For selection, use the chrome WCV's
-      // did-start-navigation (user clicked a link) as a proxy, BUT we block navigation.
-      // Actually: just send the select from the main process when any portal WCV gets focus.
+      // Focus on any portal content WCV → select the widget
       const focusHandler = () => {
         if (dimWin.editMode && !dimWin.browserWindow.isDestroyed()) {
           dimWin.browserWindow.webContents.send('widget:select', widgetId)
         }
-      }
-      const chromeWC = portal.chromeWCV.webContents
-      if (!chromeWC.isDestroyed()) {
-        chromeWC.on('focus', focusHandler)
-        listeners.push(() => { try { chromeWC.off('focus', focusHandler) } catch {} })
       }
       for (const [, tab] of portal.tabs) {
         const contentWC = tab.contentWCV.webContents
@@ -887,166 +862,16 @@ export function freezePortals(dimWin: DimensionsWindow, freeze: boolean): void {
         }
       }
 
-      frozenState.set(widgetId, { cssKeys, listeners })
+      frozenState.set(portalId, { cssKeys, listeners })
     } else {
-      const state = frozenState.get(widgetId)
+      const state = frozenState.get(portalId)
       if (state) {
         for (const cleanup of state.listeners) cleanup()
-
-        removeFreeze(portal.chromeWCV.webContents, state.cssKeys)
         for (const [, tab] of portal.tabs) {
           removeFreeze(tab.contentWCV.webContents, state.cssKeys)
         }
-
-        frozenState.delete(widgetId)
+        frozenState.delete(portalId)
       }
     }
   }
-}
-
-/**
- * Register IPC handlers for portal navigation, tab management, etc.
- * Must be called once at app startup.
- */
-export function registerPortalIpcHandlers(): void {
-  // Lazy import to avoid circular dependency
-  const getWindows = (): DimensionsWindow[] => {
-    const { getAllWindows } = require('./window-manager')
-    return getAllWindows()
-  }
-
-  // Navigate the active tab to a URL
-  ipcMain.handle(
-    'portal:navigate',
-    (_event, portalId: string, rawUrl: string) => {
-      const portal = findPortal(portalId)
-      if (!portal) return
-
-      const tab = portal.tabs.get(portal.activeTabId)
-      if (!tab) return
-
-      // Normalize URL: add https:// if no protocol
-      let url = rawUrl.trim()
-      if (url && !url.match(/^[a-zA-Z]+:\/\//)) {
-        // If it looks like a domain, add https. Otherwise treat as search.
-        if (url.match(/^[^\s]+\.[^\s]+/)) {
-          url = `https://${url}`
-        } else {
-          url = `https://www.google.com/search?q=${encodeURIComponent(url)}`
-        }
-      }
-
-      tab.contentWCV.webContents.loadURL(url).catch(() => {})
-    },
-  )
-
-  // Go back
-  ipcMain.handle('portal:goBack', (_event, portalId: string) => {
-    const portal = findPortal(portalId)
-    if (!portal) return
-
-    const tab = portal.tabs.get(portal.activeTabId)
-    if (!tab) return
-
-    const wc = tab.contentWCV.webContents
-    if (!wc.isDestroyed() && wc.navigationHistory.canGoBack()) {
-      wc.navigationHistory.goBack()
-    }
-  })
-
-  // Go forward
-  ipcMain.handle('portal:goForward', (_event, portalId: string) => {
-    const portal = findPortal(portalId)
-    if (!portal) return
-
-    const tab = portal.tabs.get(portal.activeTabId)
-    if (!tab) return
-
-    const wc = tab.contentWCV.webContents
-    if (!wc.isDestroyed() && wc.navigationHistory.canGoForward()) {
-      wc.navigationHistory.goForward()
-    }
-  })
-
-  // Reload
-  ipcMain.handle('portal:reload', (_event, portalId: string) => {
-    const portal = findPortal(portalId)
-    if (!portal) return
-
-    const tab = portal.tabs.get(portal.activeTabId)
-    if (!tab) return
-
-    const wc = tab.contentWCV.webContents
-    if (!wc.isDestroyed()) {
-      wc.reload()
-    }
-  })
-
-  // Stop loading
-  ipcMain.handle('portal:stop', (_event, portalId: string) => {
-    const portal = findPortal(portalId)
-    if (!portal) return
-
-    const tab = portal.tabs.get(portal.activeTabId)
-    if (!tab) return
-
-    const wc = tab.contentWCV.webContents
-    if (!wc.isDestroyed()) {
-      wc.stop()
-    }
-  })
-
-  // New tab
-  ipcMain.handle(
-    'portal:newTab',
-    (_event, portalId: string, url?: string) => {
-      const result = findPortalAndWindow(portalId, getWindows)
-      if (!result) return
-
-      const { portal, dimWin } = result
-      const defaultUrl = url || 'about:blank'
-
-      // Hide the current active tab's content WCV
-      const oldTab = portal.tabs.get(portal.activeTabId)
-      if (oldTab && !dimWin.browserWindow.isDestroyed()) {
-        try {
-          dimWin.browserWindow.contentView.removeChildView(oldTab.contentWCV)
-        } catch {}
-      }
-
-      const newTab = createTab(portal, dimWin, defaultUrl)
-      portal.activeTabId = newTab.id
-
-      sendNavUpdate(portal)
-      sendTabsUpdate(portal)
-    },
-  )
-
-  // Close tab
-  ipcMain.handle(
-    'portal:closeTab',
-    (_event, portalId: string, tabId: string) => {
-      const result = findPortalAndWindow(portalId, getWindows)
-      if (!result) return
-
-      const { portal, dimWin } = result
-
-      // Don't close the last tab — close the portal instead? Or keep one tab.
-      if (portal.tabs.size <= 1) return
-
-      closeTab(portal, tabId, dimWin)
-    },
-  )
-
-  // Switch tab
-  ipcMain.handle(
-    'portal:switchTab',
-    (_event, portalId: string, tabId: string) => {
-      const result = findPortalAndWindow(portalId, getWindows)
-      if (!result) return
-
-      const { portal, dimWin } = result
-      switchPortalTab(portal, tabId, dimWin)
-    },
-  )
 }

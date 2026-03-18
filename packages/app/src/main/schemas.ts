@@ -30,9 +30,30 @@ export const WidgetPropSchema = z.object({
   label: z.string(),
 })
 
+// ── Compound widget children ──
+
+export const CompoundChildLayoutSchema = z.object({
+  anchor: z.enum(['top', 'bottom', 'left', 'right', 'fill']),
+  height: z.number().optional(),
+  width: z.number().optional(),
+  // Insets for fill anchor — space reserved for the compound's own UI
+  top: z.number().optional(),
+  bottom: z.number().optional(),
+  left: z.number().optional(),
+  right: z.number().optional(),
+})
+
+export const CompoundChildSchema = z.object({
+  id: z.string(),
+  type: z.enum(['custom', 'webportal']),
+  widgetType: z.string().optional(), // for custom children — references a widget in the scene
+  url: z.string().optional(),        // for webportal children — default URL
+  layout: CompoundChildLayoutSchema,
+})
+
 export const WidgetManifestSchema = z.object({
   id: z.string(),
-  type: z.enum(['custom', 'webportal', 'terminal']),
+  type: z.enum(['custom', 'webportal', 'terminal', 'compound']),
   title: z.string(),
   capabilities: z.array(z.string()).default([]),
   allowedHosts: z.array(z.string()).optional(),
@@ -40,6 +61,7 @@ export const WidgetManifestSchema = z.object({
   envKeys: z.array(z.string()).optional(),
   url: z.string().optional(), // default URL for webportal widgets
   targetPortals: z.array(z.string()).optional(), // portal-control: allowed portal widget IDs
+  children: z.array(CompoundChildSchema).optional(), // compound widget children
   inputs: z.array(WidgetInputSchema).optional(),
   outputs: z.array(WidgetOutputSchema).optional(),
   props: z.array(WidgetPropSchema).optional(),
@@ -117,6 +139,8 @@ export const PortalRuleSchema = z.object({
 
 // ── Inferred types ──
 
+export type CompoundChild = z.infer<typeof CompoundChildSchema>
+export type CompoundChildLayout = z.infer<typeof CompoundChildLayoutSchema>
 export type Viewport = z.infer<typeof ViewportSchema>
 export type SceneMeta = z.infer<typeof SceneMetaSchema>
 export type WidgetManifest = z.infer<typeof WidgetManifestSchema>

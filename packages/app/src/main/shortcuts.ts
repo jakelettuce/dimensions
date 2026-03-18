@@ -15,7 +15,7 @@ function getFocusedDimWin() {
 // Track saved WCV state for hide/show
 const savedBounds = new Map<string, { x: number; y: number; width: number; height: number }>()
 
-// Collect ALL WCVs that need hiding (scene + all portal chrome + all portal content tabs)
+// Collect ALL portal content WCVs that need hiding
 function getAllPortalWCVs(dimWin: DimensionsWindow): Electron.WebContentsView[] {
   const wcvs: Electron.WebContentsView[] = []
   if (!dimWin.currentScene) return wcvs
@@ -23,7 +23,6 @@ function getAllPortalWCVs(dimWin: DimensionsWindow): Electron.WebContentsView[] 
   for (const entry of dimWin.currentScene.meta.widgets) {
     const portal = getPortal(entry.id)
     if (!portal) continue
-    wcvs.push(portal.chromeWCV)
     for (const [, tab] of portal.tabs) {
       wcvs.push(tab.contentWCV)
     }
@@ -59,7 +58,6 @@ function showAllWCVs(dimWin: DimensionsWindow): void {
         if (activeTab) {
           dimWin.browserWindow.contentView.addChildView(activeTab.contentWCV)
         }
-        dimWin.browserWindow.contentView.addChildView(portal.chromeWCV)
       }
     }
   } catch {}
