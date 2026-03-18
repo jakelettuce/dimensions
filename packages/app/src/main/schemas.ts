@@ -24,8 +24,10 @@ export const WidgetOutputSchema = z.object({
 
 export const WidgetPropSchema = z.object({
   key: z.string(),
-  type: z.enum(['string', 'number', 'boolean', 'color', 'select', 'scene', 'array']),
-  itemType: z.enum(['string', 'number']).optional(), // for array type
+  type: z.enum(['string', 'number', 'boolean', 'color', 'select', 'scene', 'array', 'media']),
+  itemType: z.enum(['string', 'number']).optional(),
+  accept: z.array(z.string()).optional(),  // for media type — MIME patterns
+  maxItems: z.number().optional(),         // for media type
   options: z.array(z.string()).optional(),
   default: z.any().optional(),
   label: z.string(),

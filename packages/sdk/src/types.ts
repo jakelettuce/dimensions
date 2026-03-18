@@ -75,8 +75,10 @@ export interface WidgetOutput {
 
 export interface WidgetProp {
   key: string
-  type: 'string' | 'number' | 'boolean' | 'color' | 'select' | 'scene' | 'array'
+  type: 'string' | 'number' | 'boolean' | 'color' | 'select' | 'scene' | 'array' | 'media'
   itemType?: 'string' | 'number'
+  accept?: string[]       // for media — MIME patterns like ["image/*"]
+  maxItems?: number       // for media — max files
   default?: any
   label: string
   options?: string[]

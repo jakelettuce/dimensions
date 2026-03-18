@@ -1,7 +1,7 @@
 import { BrowserWindow, WebContentsView, ipcMain } from 'electron'
 import path from 'path'
 import { is } from '@electron-toolkit/utils'
-import { SECURE_WEB_PREFERENCES, DIMENSIONS_DIR } from './constants'
+import { SECURE_WEB_PREFERENCES, DIMENSIONS_DIR, buildAssetUrl } from './constants'
 import {
   loadSceneFromDisk,
   generateSceneHtml,
@@ -264,7 +264,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
       const html = generateSceneHtml(updatedScene)
       const htmlPath = writeSceneHtml(scenePath, html)
       const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
-      const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+      const sceneUrl = buildAssetUrl(sceneRelative)
 
       dimWin.sceneWCV.webContents.loadURL(sceneUrl)
 
@@ -294,7 +294,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
     const html = generateSceneHtml(scene)
     const htmlPath = writeSceneHtml(scenePath, html)
     const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
-    const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+    const sceneUrl = buildAssetUrl(sceneRelative)
     dimWin.sceneWCV.webContents.loadURL(sceneUrl)
 
     // Start watching this scene for file changes
@@ -353,7 +353,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
           const html = generateSceneHtml(updatedScene)
           const htmlPath = writeSceneHtml(scenePath, html)
           const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
-          const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+          const sceneUrl = buildAssetUrl(sceneRelative)
 
           dimWin.sceneWCV.webContents.loadURL(sceneUrl)
           writeAgentContextFiles(updatedScene)
@@ -393,7 +393,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
           const html = generateSceneHtml(updatedScene)
           const htmlPath = writeSceneHtml(scenePath, html)
           const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
-          const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+          const sceneUrl = buildAssetUrl(sceneRelative)
 
           dimWin.sceneWCV.webContents.loadURL(sceneUrl)
           mountAllWebportals(dimWin)

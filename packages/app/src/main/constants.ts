@@ -7,6 +7,12 @@ export const DB_PATH = path.join(DIMENSIONS_DIR, 'dimensions.db')
 
 export const SCHEME_DIMENSIONS = 'dimensions'
 export const SCHEME_ASSET = 'dimensions-asset'
+export const ASSET_ORIGIN = 'dimensions-asset://app'
+
+/** Build a dimensions-asset://app/... URL for a file relative to DIMENSIONS_DIR. */
+export function buildAssetUrl(relativePath: string): string {
+  return `${ASSET_ORIGIN}/${relativePath.split(path.sep).join('/')}`
+}
 
 // Security: full webPreferences lockdown applied to ALL windows/WCVs
 export const SECURE_WEB_PREFERENCES = {

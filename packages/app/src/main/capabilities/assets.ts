@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { CapabilityModule, CapabilityContext } from './index'
 import { assertCapability } from './index'
-import { DIMENSIONS_DIR } from '../constants'
+import { DIMENSIONS_DIR, buildAssetUrl } from '../constants'
 import { assertPathWithin } from '../ipc-safety'
 
 const ASSETS_MAX_FILE_BYTES = 500 * 1024 * 1024 // 500MB
@@ -50,8 +50,7 @@ export const assetsCapability: CapabilityModule = {
 
       fs.writeFileSync(assetPath, buffer)
 
-      const relPath = path.relative(DIMENSIONS_DIR, assetPath).split(path.sep).join('/')
-      return `dimensions-asset://${relPath}`
+      return buildAssetUrl(path.relative(DIMENSIONS_DIR, assetPath))
     })
 
     // sdk.assets.resolve(assetUrl)
@@ -76,7 +75,7 @@ export const assetsCapability: CapabilityModule = {
       // Validate underlying file exists
       try {
         const urlObj = new URL(assetUrl)
-        const relativePath = decodeURIComponent(urlObj.hostname + urlObj.pathname)
+        const relativePath = decodeURIComponent(urlObj.pathname.replace(/^\//, ''))
         const resolvedPath = path.resolve(DIMENSIONS_DIR, relativePath)
         assertPathWithin(resolvedPath, DIMENSIONS_DIR)
         if (!fs.existsSync(resolvedPath)) {
@@ -118,9 +117,8 @@ export const assetsCapability: CapabilityModule = {
             '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg',
             '.pdf': 'application/pdf', '.json': 'application/json',
           }
-          const relPath = path.relative(DIMENSIONS_DIR, filePath).split(path.sep).join('/')
           return {
-            url: `dimensions-asset://${relPath}`,
+            url: buildAssetUrl(path.relative(DIMENSIONS_DIR, filePath)),
             name: f,
             size: stat.size,
             mimeType: mimeMap[ext] || 'application/octet-stream',

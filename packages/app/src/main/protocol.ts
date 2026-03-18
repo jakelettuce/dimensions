@@ -51,7 +51,7 @@ export function registerProtocols(): void {
     },
     {
       scheme: SCHEME_ASSET,
-      privileges: { standard: true, secure: true, supportFetchAPI: true },
+      privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
     },
   ])
 }
@@ -60,12 +60,12 @@ export function registerProtocols(): void {
 
 export function registerProtocolHandlers(): void {
   // dimensions-asset:// — read-only static file serving
-  // Format: dimensions-asset://scene-slug/widgets/widget-id/assets/image.png
-  // Resolves to: ~/Dimensions/scene-slug/widgets/widget-id/assets/image.png
+  // Format: dimensions-asset://app/home/widgets/widget-id/dist/bundle.html
+  // Hostname is always "app" (fixed origin). Path is relative to ~/Dimensions/.
   protocol.handle(SCHEME_ASSET, (request) => {
     const url = new URL(request.url)
-    // hostname + pathname gives us the full path
-    const relativePath = decodeURIComponent(url.hostname + url.pathname)
+    // Ignore hostname (always "app"), use pathname only
+    const relativePath = decodeURIComponent(url.pathname.replace(/^\//, ''))
     const resolvedPath = path.resolve(DIMENSIONS_DIR, relativePath)
 
     // SECURITY: validate path is within ~/Dimensions/
@@ -79,11 +79,14 @@ export function registerProtocolHandlers(): void {
       return new Response('Not Found', { status: 404 })
     }
 
-    // Serve file directly — no file:// protocol, no CORS issues
+    // Serve file with CORS headers so the renderer can load media thumbnails
     const data = fs.readFileSync(resolvedPath)
     const ext = path.extname(resolvedPath).toLowerCase()
     return new Response(data, {
-      headers: { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' },
+      headers: {
+        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
+        'Access-Control-Allow-Origin': '*',
+      },
     })
   })
 
@@ -236,12 +239,3 @@ function resolveDimension(dimensionPath: string, sceneSlug: string | undefined, 
   }
 }
 
-/**
- * Build a dimensions-asset:// URL for a file within a scene.
- * @param scenePath Absolute path to the scene folder
- * @param relativePath Path relative to the scene folder
- */
-export function buildAssetUrl(scenePath: string, relativePath: string): string {
-  const sceneRelative = path.relative(DIMENSIONS_DIR, scenePath)
-  return `${SCHEME_ASSET}://${sceneRelative}/${relativePath}`
-}

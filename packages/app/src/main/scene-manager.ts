@@ -3,7 +3,7 @@ import path from 'path'
 import { ulid } from 'ulid'
 import { SceneMetaSchema, WidgetManifestSchema, ConnectionsFileSchema, DimensionMetaSchema } from './schemas'
 import type { SceneMeta, WidgetManifest, Connection, DimensionMeta, Theme, Viewport, CompoundChild } from './schemas'
-import { DIMENSIONS_DIR } from './constants'
+import { DIMENSIONS_DIR, buildAssetUrl } from './constants'
 
 // ── Widget state (runtime, not persisted) ──
 
@@ -161,7 +161,7 @@ function getWidgetBoundsOrDefault(entry: { bounds?: { x: number; y: number; widt
 
 function buildBundleUrl(widget: WidgetState, entryId: string, sceneId: string, sceneTitle: string): string {
   if (!widget.bundlePath) return ''
-  const baseBundleUrl = `dimensions-asset://${path.relative(DIMENSIONS_DIR, widget.bundlePath).split(path.sep).join('/')}`
+  const baseBundleUrl = buildAssetUrl(path.relative(DIMENSIONS_DIR, widget.bundlePath))
   const contextParams = `widgetId=${encodeURIComponent(entryId)}&sceneId=${encodeURIComponent(sceneId)}&sceneTitle=${encodeURIComponent(sceneTitle)}`
   return `${baseBundleUrl}?${contextParams}`
 }
@@ -1301,4 +1301,174 @@ export function ensureBackgroundWidget(scenePath: string): void {
 </html>`,
     'utf-8',
   )
+}
+
+/**
+ * Ensure the media-test dimension exists with a slideshow scene.
+ */
+export function ensureMediaTestDimension(): void {
+  const dimPath = path.join(DIMENSIONS_DIR, 'media-test')
+  if (fs.existsSync(path.join(dimPath, 'dimension.json'))) return
+
+  fs.mkdirSync(dimPath, { recursive: true })
+
+  const scenePath = path.join(dimPath, 'slideshow')
+  fs.mkdirSync(path.join(scenePath, 'widgets'), { recursive: true })
+
+  // Background widget with slideshow props
+  const bgDir = path.join(scenePath, 'widgets', '_background', 'src')
+  fs.mkdirSync(bgDir, { recursive: true })
+
+  fs.writeFileSync(path.join(bgDir, 'widget.manifest.json'), JSON.stringify({
+    id: '_background',
+    type: 'custom',
+    title: 'Media Slideshow Background',
+    capabilities: ['kv', 'theme'],
+    props: [
+      { key: 'slides', type: 'media', accept: ['image/*', 'video/*'], maxItems: 20, label: 'Slideshow Media', default: [] },
+      { key: 'fit', type: 'select', options: ['cover', 'contain', 'fill', 'scale-down', 'none'], default: 'cover', label: 'Object Fit' },
+      { key: 'interval', type: 'number', default: 5, min: 1, max: 60, label: 'Seconds per slide' },
+      { key: 'transition', type: 'select', options: ['fade', 'slide', 'none'], default: 'fade', label: 'Transition' },
+    ],
+  }, null, 2), 'utf-8')
+
+  fs.writeFileSync(path.join(bgDir, 'index.html'), `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; }
+  .slide {
+    position: absolute; inset: 0;
+    opacity: 0;
+    transition: opacity 1s ease;
+  }
+  .slide.active { opacity: 1; }
+  .slide.transition-none { transition: none; }
+  .slide.transition-slide {
+    transition: transform 0.6s ease, opacity 0.6s ease;
+    transform: translateX(100%);
+  }
+  .slide.transition-slide.active { transform: translateX(0); }
+  .slide img, .slide video {
+    width: 100%; height: 100%;
+    object-fit: var(--fit, cover);
+  }
+  .empty {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: #333; font-family: system-ui; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div id="container"></div>
+<script>
+  function waitForSdk(cb) {
+    if (window.sdk) return cb(window.sdk);
+    var t = setInterval(function() { if (window.sdk) { clearInterval(t); cb(window.sdk); } }, 50);
+  }
+
+  waitForSdk(function(sdk) {
+    var container = document.getElementById('container');
+    var currentIndex = 0;
+    var slides = [];
+    var interval = 5;
+    var transition = 'fade';
+    var fit = 'cover';
+    var timer = null;
+
+    function render() {
+      container.innerHTML = '';
+      if (slides.length === 0) {
+        container.innerHTML = '<div class="empty">Add media in the properties panel</div>';
+        return;
+      }
+      slides.forEach(function(url, i) {
+        var div = document.createElement('div');
+        div.className = 'slide' + (transition !== 'fade' ? ' transition-' + transition : '');
+        if (i === currentIndex) div.classList.add('active');
+        var isVideo = url.match(/\\.(mp4|webm|mov)$/i);
+        if (isVideo) {
+          var vid = document.createElement('video');
+          vid.src = url; vid.autoplay = true; vid.muted = true; vid.loop = true;
+          vid.playsInline = true;
+          div.appendChild(vid);
+        } else {
+          var img = document.createElement('img');
+          img.src = url;
+          div.appendChild(img);
+        }
+        container.appendChild(div);
+      });
+    }
+
+    function advance() {
+      if (slides.length <= 1) return;
+      var allSlides = container.querySelectorAll('.slide');
+      allSlides.forEach(function(s) { s.classList.remove('active'); });
+      currentIndex = (currentIndex + 1) % slides.length;
+      if (allSlides[currentIndex]) allSlides[currentIndex].classList.add('active');
+    }
+
+    function startTimer() {
+      if (timer) clearInterval(timer);
+      if (slides.length > 1) {
+        timer = setInterval(advance, interval * 1000);
+      }
+    }
+
+    sdk.props.getAll().then(function(props) {
+      slides = props.slides || [];
+      fit = props.fit || 'cover';
+      interval = props.interval || 5;
+      transition = props.transition || 'fade';
+      document.documentElement.style.setProperty('--fit', fit);
+      currentIndex = 0;
+      render();
+      startTimer();
+    });
+
+    sdk.props.onAnyChange(function(props) {
+      slides = props.slides || [];
+      fit = props.fit || 'cover';
+      interval = props.interval || 5;
+      transition = props.transition || 'fade';
+      document.documentElement.style.setProperty('--fit', fit);
+      currentIndex = 0;
+      render();
+      startTimer();
+    });
+  });
+</script>
+</body>
+</html>`, 'utf-8')
+
+  // Scene meta
+  const sceneMeta: SceneMeta = {
+    id: ulid(),
+    title: 'Slideshow',
+    slug: 'slideshow',
+    theme: { background: '#0a0a0a', accent: '#7c3aed' },
+    viewport: { width: 1920, height: 1080 },
+    widgets: [{
+      id: ulid(),
+      widgetType: '_background',
+      manifestPath: 'widgets/_background/src/widget.manifest.json',
+      bounds: { x: 0, y: 0, width: 4000, height: 4000 },
+    }],
+  }
+  fs.writeFileSync(path.join(scenePath, 'meta.json'), JSON.stringify(sceneMeta, null, 2), 'utf-8')
+  fs.writeFileSync(path.join(scenePath, 'connections.json'), '[]', 'utf-8')
+
+  // Dimension meta
+  fs.writeFileSync(path.join(dimPath, 'dimension.json'), JSON.stringify({
+    id: ulid(),
+    title: 'Media Test',
+    slug: 'media-test',
+    scenes: ['slideshow'],
+    entryScene: 'slideshow',
+    theme: { background: '#0a0a0a', accent: '#7c3aed' },
+  }, null, 2), 'utf-8')
 }

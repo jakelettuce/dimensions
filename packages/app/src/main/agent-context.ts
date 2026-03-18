@@ -427,6 +427,21 @@ var tags = await sdk.props.get('tags'); // ["tag1", "tag2"]
 sdk.props.onChange('tags', function(val) { console.log('tags changed:', val); });
 \`\`\`
 
+### Media props:
+\`\`\`json
+{ "key": "slides", "type": "media", "accept": ["image/*", "video/*"], "maxItems": 20, "label": "Slideshow" }
+\`\`\`
+\`\`\`javascript
+var slides = await sdk.props.get('slides');
+// ["dimensions-asset://app/_media/a1b2c3.jpg", "dimensions-asset://app/_media/d4e5f6.png"]
+slides.forEach(function(url) { var img = new Image(); img.src = url; container.appendChild(img); });
+sdk.props.onChange('slides', function(urls) { renderSlideshow(urls); });
+\`\`\`
+
+Media stored in \`~/Dimensions/_media/\` (centralized, deduplicated by content hash).
+\`accept\` filters the file picker: \`["image/*"]\` = images only. Omit for all media types.
+The properties panel shows a thumbnail grid with add/remove. "Add Media" opens a picker modal.
+
 ## Dataflow Wiring (connections.json)
 
 \`\`\`json

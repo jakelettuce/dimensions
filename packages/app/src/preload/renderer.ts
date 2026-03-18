@@ -24,6 +24,11 @@ const INVOKE_CHANNELS = new Set([
   'set-scale-mode',
   'set-widget-prop',
   'reset-widget-prop',
+  'add-media',
+  'list-media',
+  'delete-media',
+  'hide-wcvs',
+  'show-wcvs',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -182,6 +187,18 @@ contextBridge.exposeInMainWorld('dimensions', {
     ipcRenderer.invoke('set-widget-prop', widgetId, key, value),
   resetWidgetProp: (widgetId: string, key: string) =>
     ipcRenderer.invoke('reset-widget-prop', widgetId, key),
+
+  // WCV visibility (for modals that need to overlay the scene)
+  hideWcvs: () => ipcRenderer.invoke('hide-wcvs'),
+  showWcvs: () => ipcRenderer.invoke('show-wcvs'),
+
+  // Media library
+  addMedia: (options?: { accept?: string[]; multiple?: boolean }) =>
+    ipcRenderer.invoke('add-media', options ?? {}),
+  listMedia: (accept?: string[]) =>
+    ipcRenderer.invoke('list-media', accept),
+  deleteMedia: (filename: string) =>
+    ipcRenderer.invoke('delete-media', filename),
 
   // Widget props updated
   onWidgetPropsUpdated: (cb: (data: { widgetId: string; props: Record<string, any> }) => void) => {

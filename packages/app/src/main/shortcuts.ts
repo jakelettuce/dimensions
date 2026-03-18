@@ -4,7 +4,7 @@ import { findWindowByBrowserWindow, findWindowByWebContentsId, toggleEditMode, c
 import type { Database } from 'sql.js'
 import { loadSceneFromDisk, generateSceneHtml, writeSceneHtml } from './scene-manager'
 import { getPortal, mountAllWebportals, repositionPortals } from './webportal-manager'
-import { DIMENSIONS_DIR } from './constants'
+import { DIMENSIONS_DIR, buildAssetUrl } from './constants'
 
 function getFocusedDimWin() {
   const focused = BrowserWindow.getFocusedWindow()
@@ -275,6 +275,16 @@ export function registerShortcuts(db: Database): void {
     showAllWCVs(dimWin)
   })
 
+  ipcMain.handle('hide-wcvs', (event) => {
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (dimWin) hideAllWCVs(dimWin)
+  })
+
+  ipcMain.handle('show-wcvs', (event) => {
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (dimWin) showAllWCVs(dimWin)
+  })
+
   ipcMain.handle('toggle-wcv-visibility', (event, visible: unknown) => {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
@@ -289,7 +299,7 @@ export function registerShortcuts(db: Database): void {
         const html = generateSceneHtml(updatedScene)
         const htmlPath = writeSceneHtml(scenePath, html)
         const sceneRelative = path.relative(DIMENSIONS_DIR, htmlPath)
-        const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
+        const sceneUrl = buildAssetUrl(sceneRelative)
 
         showAllWCVs(dimWin)
         dimWin.sceneWCV.webContents.loadURL(sceneUrl)

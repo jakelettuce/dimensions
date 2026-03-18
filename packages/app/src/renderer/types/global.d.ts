@@ -45,6 +45,12 @@ declare global {
       // Widget props
       setWidgetProp: (widgetId: string, key: string, value: unknown) => Promise<any>
       resetWidgetProp: (widgetId: string, key: string) => Promise<any>
+      hideWcvs: () => Promise<void>
+      showWcvs: () => Promise<void>
+      // Media library
+      addMedia: (options?: { accept?: string[]; multiple?: boolean }) => Promise<{ urls: string[] } | { error: string }>
+      listMedia: (accept?: string[]) => Promise<any[]>
+      deleteMedia: (filename: string) => Promise<any>
       onWidgetPropsUpdated: (cb: (data: { widgetId: string; props: Record<string, any> }) => void) => void
       // Scale mode
       setScaleMode: (mode: string) => Promise<void>

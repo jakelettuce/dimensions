@@ -23,7 +23,7 @@ function fixPath(): void {
 
 fixPath()
 
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { registerProtocols, registerProtocolHandlers } from './protocol'
@@ -35,7 +35,7 @@ import {
   getAllWindows,
   findWindowByWebContentsId,
 } from './window-manager'
-import { ensureHomeDimension } from './scene-manager'
+import { ensureHomeDimension, ensureMediaTestDimension } from './scene-manager'
 import type { WidgetState, SceneState } from './scene-manager'
 import type { DimensionsWindow } from './window-manager'
 import { registerCapabilities } from './capabilities/index'
@@ -43,8 +43,9 @@ import { registerTerminalIpcHandlers } from './terminal'
 import { repositionPortals, setWindowGetter } from './webportal-manager'
 import { registerShortcuts, unregisterGlobalShortcuts } from './shortcuts'
 import { registerFileOperationHandlers } from './file-operations'
-import { HOME_SCENE_DIR } from './constants'
+import { HOME_SCENE_DIR, ASSET_ORIGIN } from './constants'
 import { sanitizeIpcData } from './ipc-safety'
+import { importMedia, listMediaFiltered, deleteMedia, getMimeType, buildDialogFilters, syncMediaReferences, getMediaReferences } from './media-library'
 
 // Protocols MUST be registered before app.ready — silently fails otherwise
 registerProtocols()
@@ -177,6 +178,16 @@ app.whenReady().then(async () => {
         if (value === null || value === '') return null
         if (typeof value !== 'string') return 'Expected string or null'
         return null
+      case 'media':
+        if (!Array.isArray(value)) return 'Expected array'
+        if (value.length > ((schema as any).maxItems || 100)) return `Exceeds maxItems ${(schema as any).maxItems || 100}`
+        for (let i = 0; i < value.length; i++) {
+          if (typeof value[i] !== 'string') return `Item ${i} is not a string`
+          if (!value[i].startsWith(`${ASSET_ORIGIN}/_media/`)) return `Item ${i} is not a valid media URL`
+          const fn = value[i].replace(`${ASSET_ORIGIN}/_media/`, '')
+          if (fn.includes('/') || fn.includes('..')) return `Item ${i} has invalid filename`
+        }
+        return null
       case 'array':
         if (!Array.isArray(value)) return 'Expected array'
         if (value.length > 1000) return 'Array exceeds 1000 items'
@@ -247,6 +258,11 @@ app.whenReady().then(async () => {
       memEntry.props[key] = value
     }
 
+    // Sync media references if this is a media prop
+    if (propSchema.type === 'media' && Array.isArray(value) && dimWin.currentScene) {
+      syncMediaReferences(value, dimWin.currentScene.path, widgetId, key)
+    }
+
     // Notify widget iframe live
     if (!dimWin.sceneWCV.webContents.isDestroyed()) {
       dimWin.sceneWCV.webContents.send('scene:prop-change', { widgetId, key, value })
@@ -289,6 +305,11 @@ app.whenReady().then(async () => {
     const memEntry = dimWin.currentScene.meta.widgets.find(w => w.id === widgetId)
     if (memEntry?.props) delete memEntry.props[key]
 
+    // Clear media references for this prop
+    if (propSchema.type === 'media' && dimWin.currentScene) {
+      syncMediaReferences([], dimWin.currentScene.path, widgetId, key)
+    }
+
     // Notify widget with default value
     const defaultValue = propSchema.default
     if (!dimWin.sceneWCV.webContents.isDestroyed()) {
@@ -306,7 +327,92 @@ app.whenReady().then(async () => {
     return { success: true }
   })
 
+  // ── Media library ──
+
+  ipcMain.handle('add-media', async (event, options: { accept?: string[]; multiple?: boolean }) => {
+    const dimWin = findWindowByWebContentsId(event.sender.id)
+    if (!dimWin) return { error: 'no_window' }
+
+    const filters = buildDialogFilters(options?.accept)
+    const result = await dialog.showOpenDialog(dimWin.browserWindow, {
+      title: 'Add Media',
+      properties: options?.multiple !== false ? ['openFile', 'multiSelections'] : ['openFile'],
+      filters,
+    })
+    if (result.canceled || result.filePaths.length === 0) return { urls: [] }
+
+    const urls: string[] = []
+    for (const filePath of result.filePaths) {
+      const originalName = path.basename(filePath)
+      const mimeType = getMimeType(filePath)
+      const url = importMedia(filePath, originalName, mimeType)
+      urls.push(url)
+    }
+    return sanitizeIpcData({ urls })
+  })
+
+  ipcMain.handle('list-media', (_event, accept?: string[]) => {
+    return sanitizeIpcData(listMediaFiltered(accept ?? []))
+  })
+
+  ipcMain.handle('delete-media', (_event, filename: unknown) => {
+    if (typeof filename !== 'string') return { error: 'invalid_filename' }
+    if (filename.includes('/') || filename.includes('..')) return { error: 'invalid_filename' }
+
+    try {
+      const mediaUrl = `${ASSET_ORIGIN}/_media/${filename}`
+      const refs = getMediaReferences(filename)
+
+      // Remove the URL from each referenced widget prop in meta.json
+      for (const ref of refs) {
+        try {
+          const metaPath = path.join(ref.scenePath, 'meta.json')
+          if (!fs.existsSync(metaPath)) continue
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+          const widget = meta.widgets?.find((w: any) => w.id === ref.widgetId)
+          if (!widget?.props?.[ref.propKey]) continue
+          const arr = widget.props[ref.propKey]
+          if (Array.isArray(arr) && arr.includes(mediaUrl)) {
+            widget.props[ref.propKey] = arr.filter((v: string) => v !== mediaUrl)
+            fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8')
+          }
+        } catch {}
+      }
+
+      // Notify active scene widgets of prop changes
+      for (const dimWin of getAllWindows()) {
+        if (!dimWin.currentScene) continue
+        for (const ref of refs) {
+          if (ref.scenePath !== dimWin.currentScene.path) continue
+          const memEntry = dimWin.currentScene.meta.widgets.find(w => w.id === ref.widgetId)
+          if (!memEntry?.props?.[ref.propKey]) continue
+          const arr = memEntry.props[ref.propKey]
+          if (Array.isArray(arr)) {
+            const updated = arr.filter((v: string) => v !== mediaUrl)
+            memEntry.props[ref.propKey] = updated
+            if (!dimWin.sceneWCV.webContents.isDestroyed()) {
+              dimWin.sceneWCV.webContents.send('scene:prop-change', {
+                widgetId: ref.widgetId, key: ref.propKey, value: updated,
+              })
+            }
+            if (!dimWin.browserWindow.isDestroyed()) {
+              dimWin.browserWindow.webContents.send('widget:props-updated', {
+                widgetId: ref.widgetId, props: memEntry.props,
+              })
+            }
+          }
+        }
+      }
+
+      deleteMedia(filename)
+      return { success: true }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'delete_failed' }
+    }
+  })
+
   ensureHomeDimension()
+  ensureMediaTestDimension()
 
   // Home is a dimension — load via protocol to get proper dimension routing
   const dimWin = createWindow(db)

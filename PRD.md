@@ -438,11 +438,27 @@ Props are declared in the widget manifest, stored per-instance in `meta.json`, a
 
 Props are always available (no capability required) — a widget reading its own configuration is not a privileged operation.
 
-**Prop types:** `string` (with maxLength), `number` (with min/max/step), `boolean`, `color`, `select` (with options), `scene`, `array` (with itemType: "string" | "number")
+**Prop types:** `string` (with maxLength), `number` (with min/max/step), `boolean`, `color`, `select` (with options), `scene`, `array` (with itemType), `media` (with accept MIME patterns, maxItems)
 
 **Effective value resolution:** `meta.json props[key]` → `manifest props[key].default` → `undefined`
 
-**Validation:** Every prop value is validated against its declared type before persisting. Color values must be valid CSS hex/rgb/hsl. Array items are validated against `itemType`. Strings capped at 10KB. Numbers checked against min/max.
+**Validation:** Every prop value is validated against its declared type before persisting. Color values must be valid CSS hex/rgb/hsl. Array items validated against `itemType`. Media URLs must be `dimensions-asset://app/_media/` with no path traversal. Strings capped at 10KB. Numbers checked against min/max.
+
+### Media Library
+
+All media lives in `~/Dimensions/_media/` — centralized and deduplicated by content hash (SHA-256). Same file uploaded to multiple widgets = one copy on disk.
+
+```
+~/Dimensions/_media/
+  a1b2c3d4e5f6a7b8c9d0e1f2.jpg    # content-addressed filename
+  metadata.json                      # tracks originalName, mimeType, size, references
+```
+
+The `media` prop type stores arrays of `dimensions-asset://app/_media/` URLs. The properties panel shows a thumbnail grid with a picker modal for browsing the library and uploading new files.
+
+**Reference tracking:** Each media file's metadata tracks which widgets reference it (scene path, widget ID, prop key). Deleting a file from the library automatically removes its URL from all widget props and notifies active widgets.
+
+**MIME filtering:** Media props declare `accept` patterns (e.g., `["image/*"]`, `["video/mp4", "video/webm"]`) that filter both the file picker dialog and the library browser.
 
 ### SDK Package Contents
 
@@ -769,7 +785,8 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 - OS keychain secrets storage (safeStorage)
 - SQLite (sql.js/WASM) for KV, index, grants, history
 - Widget dataflow wiring (connections.json)
-- Widget properties system (manifest-declared, panel-editable, live SDK delivery, 7 types)
+- Widget properties system (manifest-declared, panel-editable, live SDK delivery, 8 types including media)
+- Centralized media library (`_media/`, content-hash dedup, reference tracking, picker modal)
 - `dimensions://` + `dimensions-asset://` protocols
 - `Cmd+K` command palette
 - CLAUDE.md auto-generation (full SDK reference, build guidance, background widget docs)

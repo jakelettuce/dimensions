@@ -146,7 +146,11 @@ sdk.on('selectedItem', (item) => { ... })
 
 Widgets declare configurable props in their manifest — type, default, label. Values are stored per-instance in `meta.json` and editable in the properties panel. Changes are delivered live to the widget via SDK — no rebuild needed.
 
-Prop types: `string`, `number` (with min/max/step), `boolean`, `color`, `select`, `scene`, `array` (with itemType).
+Prop types: `string`, `number`, `boolean`, `color`, `select`, `scene`, `array`, `media`.
+
+### Media library
+
+All media lives in `~/Dimensions/_media/` — centralized and deduplicated by content hash. Upload once, reference everywhere. The `media` prop type stores arrays of asset URLs with MIME-based filtering (`accept: ["image/*"]`), a visual picker modal with library browsing and drag-to-reorder, and live thumbnail previews in the properties panel. Media references are tracked per-widget — deleting a file from the library automatically removes it from all widget props.
 
 ### Compound widgets
 

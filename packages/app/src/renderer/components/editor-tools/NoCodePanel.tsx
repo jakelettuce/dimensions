@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { RotateCcw } from 'lucide-react'
+import { MediaPickerModal } from '../media-picker/MediaPickerModal'
 
 // ── Prop input components ──
 
@@ -207,6 +208,68 @@ function ArrayInput({ value, onChange, itemType }: {
   )
 }
 
+function MediaInput({ value, onChange, accept, maxItems }: {
+  value: string[]; onChange: (v: string[]) => void; accept?: string[]; maxItems?: number
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const items = Array.isArray(value) ? value : []
+  const remaining = (maxItems || 100) - items.length
+
+  return (
+    <div className="space-y-2">
+      {items.length > 0 && (
+        <div className="grid grid-cols-3 gap-1.5">
+          {items.map((url, i) => {
+            const isVid = /\.(mp4|webm|mov|avi|mkv)$/i.test(url)
+            const isAud = /\.(mp3|wav|ogg|aac|flac|m4a)$/i.test(url)
+            return (
+              <div key={i} className="relative group aspect-square rounded overflow-hidden bg-[var(--color-bg-primary)] border border-[var(--color-border)]">
+                {isVid
+                  ? <div className="w-full h-full flex items-center justify-center text-[var(--color-text-muted)]">▶</div>
+                  : isAud
+                    ? <div className="w-full h-full flex items-center justify-center text-[var(--color-text-muted)]">♪</div>
+                    : <img src={url} className="w-full h-full object-cover" />
+                }
+                <button
+                  onClick={() => onChange(items.filter((_, idx) => idx !== i))}
+                  className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                >×</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {remaining > 0 && (
+        <button
+          onClick={() => setPickerOpen(true)}
+          className={cn(
+            'w-full py-1.5 rounded-[var(--radius-md)]',
+            'border border-dashed border-[var(--color-border)]',
+            'text-[var(--text-xs)] text-[var(--color-text-muted)]',
+            'hover:border-[var(--color-accent)] hover:text-[var(--color-text-secondary)] transition-colors',
+          )}
+        >
+          + Add Media
+        </button>
+      )}
+
+      {pickerOpen && (
+        <MediaPickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={(urls) => {
+            onChange([...items, ...urls].slice(0, maxItems || 100))
+            setPickerOpen(false)
+          }}
+          accept={accept}
+          maxItems={remaining}
+        />
+      )}
+    </div>
+  )
+}
+
 // ── Prop row ──
 
 function PropRow({ prop, value, defaultValue, widgetId }: {
@@ -253,6 +316,7 @@ function PropRow({ prop, value, defaultValue, widgetId }: {
       {prop.type === 'select' && <SelectInput value={effectiveValue} options={prop.options || []} onChange={handleChange} />}
       {prop.type === 'scene' && <StringInput value={effectiveValue || ''} onChange={handleChange} />}
       {prop.type === 'array' && <ArrayInput value={Array.isArray(effectiveValue) ? effectiveValue : []} onChange={handleChange} itemType={prop.itemType} />}
+      {prop.type === 'media' && <MediaInput value={Array.isArray(effectiveValue) ? effectiveValue : []} onChange={handleChange} accept={prop.accept} maxItems={prop.maxItems} />}
     </div>
   )
 }
