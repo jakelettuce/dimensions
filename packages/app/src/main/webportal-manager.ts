@@ -34,6 +34,14 @@ export interface TabState {
   isPlayingAudio: boolean
 }
 
+// Extract the owning widget ID from a portal key.
+// Standalone: "widgetId" → "widgetId"
+// Compound child: "compoundId:childId" → "compoundId"
+function ownerWidgetId(portalKey: string): string {
+  const i = portalKey.indexOf(':')
+  return i !== -1 ? portalKey.substring(0, i) : portalKey
+}
+
 export interface PortalInstance {
   widgetId: string
   widgetDir: string
@@ -161,22 +169,35 @@ function getPortalState(portal: PortalInstance) {
 }
 
 function notifyPortalStateChange(portal: PortalInstance): void {
-  const fullId = portal.widgetId // e.g. "compoundId:childId" or standalone "widgetId"
+  const fullId = portal.widgetId
+  const ownerId = ownerWidgetId(fullId)
   const colonIdx = fullId.indexOf(':')
-  // For compound children, the owning widget is the compound (before the colon)
-  const ownerWidgetId = colonIdx !== -1 ? fullId.substring(0, colonIdx) : fullId
-  // Short ID is the child ID (after the colon), or the full ID for standalone portals
   const shortId = colonIdx !== -1 ? fullId.substring(colonIdx + 1) : fullId
 
-  for (const dimWin of getAllWindows() as DimensionsWindow[]) {
-    if (!dimWin.currentScene?.widgets.has(ownerWidgetId)) continue
+  for (const dimWin of getAllWindows()) {
+    if (!dimWin.currentScene?.widgets.has(ownerId)) continue
     if (dimWin.sceneWCV.webContents.isDestroyed()) continue
-    const state = getPortalState(portal)
-    // Send both full and short portalId so SDK widgets can match by either
+
+    // Only send to widgets authorized to control this portal
+    const authorizedWidgetIds: string[] = []
+    for (const [wid, ws] of dimWin.currentScene.widgets) {
+      if (!ws.manifest.capabilities.includes('portal-control')) continue
+      const targets = ws.manifest.targetPortals ?? []
+      if (targets.some(t => fullId === t || fullId.endsWith(':' + t) || shortId === t)) {
+        authorizedWidgetIds.push(wid)
+      }
+    }
+    // The owning compound widget is always authorized
+    if (ownerId !== fullId && !authorizedWidgetIds.includes(ownerId)) {
+      authorizedWidgetIds.push(ownerId)
+    }
+    if (authorizedWidgetIds.length === 0) break
+
     dimWin.sceneWCV.webContents.send('scene:portal-state-update', {
       portalId: fullId,
       shortPortalId: shortId,
-      state,
+      state: getPortalState(portal),
+      targetWidgetIds: authorizedWidgetIds,
     })
     break
   }
@@ -365,12 +386,8 @@ function createTab(
   if (!dimWin.browserWindow.isDestroyed()) {
     dimWin.browserWindow.contentView.addChildView(contentWCV)
 
-    const sceneBounds = dimWin.sceneWCV.getBounds()
-    const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
-    if (widgetBounds) {
-      const { bounds } = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
-      contentWCV.setBounds(bounds)
-    }
+    const rect = portalRect(dimWin, portal.widgetId)
+    if (rect) contentWCV.setBounds(rect)
   }
 
   contentWCV.webContents.loadURL(url).catch(() => {})
@@ -410,12 +427,8 @@ function closeTabInternal(
       try { dimWin.browserWindow.contentView.removeChildView(newActiveTab.contentWCV) } catch {}
       dimWin.browserWindow.contentView.addChildView(newActiveTab.contentWCV)
 
-      const sceneBounds = dimWin.sceneWCV.getBounds()
-      const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
-      if (widgetBounds) {
-        const { bounds } = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
-        newActiveTab.contentWCV.setBounds(bounds)
-      }
+      const rect = portalRect(dimWin, portal.widgetId)
+      if (rect) newActiveTab.contentWCV.setBounds(rect)
     }
 
     notifyPortalStateChange(portal)
@@ -447,12 +460,8 @@ export function switchPortalTab(
     try { dimWin.browserWindow.contentView.removeChildView(newTab.contentWCV) } catch {}
     dimWin.browserWindow.contentView.addChildView(newTab.contentWCV)
 
-    const sceneBounds = dimWin.sceneWCV.getBounds()
-    const widgetBounds = getWidgetBounds(dimWin, portal.widgetId)
-    if (widgetBounds) {
-      const { bounds } = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
-      newTab.contentWCV.setBounds(bounds)
-    }
+    const rect = portalRect(dimWin, portal.widgetId)
+    if (rect) newTab.contentWCV.setBounds(rect)
 
     try { newTab.contentWCV.webContents.setBackgroundThrottling(false) } catch {}
   }
@@ -469,8 +478,10 @@ export function createPortalTab(
   const portal = portals.get(portalId)
   if (!portal) return null
 
+  const ownerId = ownerWidgetId(portal.widgetId)
+
   for (const dimWin of getAllWindows()) {
-    if (!dimWin.currentScene?.widgets.has(portal.widgetId)) continue
+    if (!dimWin.currentScene?.widgets.has(ownerId)) continue
 
     const oldTab = portal.tabs.get(portal.activeTabId)
     if (oldTab && !dimWin.browserWindow.isDestroyed()) {
@@ -494,8 +505,10 @@ export function closePortalTab(
   if (portal.tabs.size <= 1) return false
   if (!portal.tabs.has(tabId)) return false
 
+  const ownerId = ownerWidgetId(portal.widgetId)
+
   for (const dimWin of getAllWindows()) {
-    if (!dimWin.currentScene?.widgets.has(portal.widgetId)) continue
+    if (!dimWin.currentScene?.widgets.has(ownerId)) continue
     closeTabInternal(portal, tabId, dimWin)
     return true
   }
@@ -504,13 +517,33 @@ export function closePortalTab(
 
 // ── Widget bounds helper ──
 
-function getWidgetBounds(dimWin: DimensionsWindow, widgetId: string): Bounds | null {
+interface ResolvedBounds {
+  bounds: Bounds
+  isScreenCoords: boolean
+}
+
+function resolveWidgetBounds(dimWin: DimensionsWindow, widgetId: string): ResolvedBounds | null {
   if (!dimWin.currentScene) return null
-  if (dimWin.currentScene.layoutMode === 'layout') {
-    return dimWin.layoutWidgetBounds.get(widgetId) ?? null
-  }
+  const reported = dimWin.layoutWidgetBounds.get(widgetId)
+  if (reported) return { bounds: reported, isScreenCoords: true }
   const entry = dimWin.currentScene.meta.widgets.find((w) => w.id === widgetId)
-  return entry?.bounds ?? null
+  if (entry?.bounds) return { bounds: entry.bounds, isScreenCoords: false }
+  return null
+}
+
+/** Calculate portal WCV rect in window coordinates. */
+function portalRect(dimWin: DimensionsWindow, portalWidgetId: string): Electron.Rectangle | null {
+  const resolved = resolveWidgetBounds(dimWin, portalWidgetId)
+  if (!resolved) return null
+  const sceneRect = dimWin.sceneWCV.getBounds()
+  if (resolved.isScreenCoords) {
+    // Already screen-relative — just offset by scene WCV position, no scale/scroll
+    const { bounds } = calculatePortalBounds(resolved.bounds, { ...sceneRect, scrollX: 0, scrollY: 0 }, 1)
+    return bounds
+  }
+  // Design-space coords — apply scale (no scroll for point-in-time positioning)
+  const { bounds } = calculatePortalBounds(resolved.bounds, sceneRect, dimWin.totalScale)
+  return bounds
 }
 
 // ── Public API ──

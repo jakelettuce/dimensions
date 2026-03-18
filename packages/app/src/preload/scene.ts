@@ -137,9 +137,14 @@ ipcRenderer.on('scene:dataflow-input', (_e, data: { targetWidgetId: string; inpu
 // Main process sends portal state updates to scene WCV, which broadcasts to ALL widget iframes.
 // Widget SDK filters locally based on onStateChange registrations.
 
-ipcRenderer.on('scene:portal-state-update', (_e, data: { portalId: string; shortPortalId: string; state: any }) => {
+ipcRenderer.on('scene:portal-state-update', (_e, data: {
+  portalId: string; shortPortalId: string; state: any; targetWidgetIds: string[]
+}) => {
+  const targets = new Set(data.targetWidgetIds || [])
   const iframes = document.querySelectorAll('iframe[data-widget-id]')
   for (const iframe of iframes) {
+    const wid = (iframe as HTMLIFrameElement).dataset.widgetId
+    if (!wid || !targets.has(wid)) continue
     const contentWindow = (iframe as HTMLIFrameElement).contentWindow
     if (contentWindow) {
       contentWindow.postMessage(

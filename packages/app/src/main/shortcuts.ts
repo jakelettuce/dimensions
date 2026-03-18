@@ -21,10 +21,27 @@ function getAllPortalWCVs(dimWin: DimensionsWindow): Electron.WebContentsView[] 
   if (!dimWin.currentScene) return wcvs
 
   for (const entry of dimWin.currentScene.meta.widgets) {
-    const portal = getPortal(entry.id)
-    if (!portal) continue
-    for (const [, tab] of portal.tabs) {
-      wcvs.push(tab.contentWCV)
+    const widget = dimWin.currentScene.widgets.get(entry.id)
+    if (!widget) continue
+
+    // Standalone portal
+    if (widget.manifest.type === 'webportal') {
+      const portal = getPortal(entry.id)
+      if (portal) {
+        for (const [, tab] of portal.tabs) wcvs.push(tab.contentWCV)
+      }
+    }
+
+    // Compound child portals
+    if (widget.manifest.type === 'compound' && widget.manifest.children) {
+      for (const child of widget.manifest.children) {
+        if (child.type === 'webportal') {
+          const portal = getPortal(`${entry.id}:${child.id}`)
+          if (portal) {
+            for (const [, tab] of portal.tabs) wcvs.push(tab.contentWCV)
+          }
+        }
+      }
     }
   }
   return wcvs
@@ -50,16 +67,13 @@ function showAllWCVs(dimWin: DimensionsWindow): void {
       savedBounds.delete(dimWin.id)
     }
 
-    if (dimWin.currentScene) {
-      for (const entry of dimWin.currentScene.meta.widgets) {
-        const portal = getPortal(entry.id)
-        if (!portal) continue
-        const activeTab = portal.tabs.get(portal.activeTabId)
-        if (activeTab) {
-          dimWin.browserWindow.contentView.addChildView(activeTab.contentWCV)
-        }
-      }
+    // Re-add all portal WCVs (standalone + compound children)
+    for (const wcv of getAllPortalWCVs(dimWin)) {
+      try { dimWin.browserWindow.contentView.addChildView(wcv) } catch {}
     }
+
+    // Reposition everything to correct bounds
+    repositionPortals(dimWin)
   } catch {}
 }
 

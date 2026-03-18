@@ -7,11 +7,13 @@ It's a desktop environment where AI tools like Claude Code can spin up fully cus
 ## What it does
 
 - **Custom interfaces, instantly.** Claude Code (or any AI agent) builds you exactly the UI you need — a morning dashboard, a research workspace, a media control panel — as a scene made of widgets, webportals, and terminals.
-- **Real web apps, embedded.** Gmail, GitHub, Notion — rendered natively via Electron WebContentsViews, not iframes. Restyle them with CSS injection to fit your setup.
+- **Real web apps, embedded.** Gmail, GitHub, Notion — rendered natively via Electron WebContentsViews. Restyle them with CSS injection. Copy, paste, download files, right-click context menus — all work.
+- **Compound widgets.** Group a browser chrome + webportal into a single draggable unit. Or build a sidebar + portal. Or a tabbed browser. Compound widgets are just widgets that contain other widgets — fully customizable.
 - **Rich media.** Images, video, audio, custom visualizations — all first-class in custom widgets.
 - **Persistent.** Storage, state, and layout survive between sessions. Your workspaces are yours.
+- **Two layout modes.** Canvas mode (absolute positioning with viewport scaling) or Layout mode (CSS flexbox/grid via `layout.html`). Switch by creating or deleting `layout.html`.
 - **Scenes link to scenes.** Navigate between workspaces with `dimensions://` links. Build flows — a morning routine that moves from inbox triage to calendar to focus mode.
-- **Dimensions.** Group related scenes into packages with shared config, ordered flows, and isolated storage. The natural unit for sharing workflows.
+- **Dimensions.** Group related scenes into ordered flows with shared theme and env config. Navigate sequentially with `sdk.navigate.next()` / `previous()`, or jump to any scene.
 - **Shareable.** Scenes are folders on disk. Share them, remix them, publish them for others.
 
 ## How it works
@@ -36,13 +38,19 @@ You: using it 30 seconds later
   morning-routine/              # a "dimension" (grouped scenes)
     dimension.json              # title, scene order, shared theme, shared env keys
     inbox/                      # scene 1
-      meta.json
+      meta.json                 # widget positions, theme, viewport
+      layout.html               # (optional) CSS layout — if present, uses Layout mode
       widgets/
         _background/            # every scene gets a customizable background widget
           src/index.html
-        email-summary/
-          src/index.html        # Claude Code writes this
-          dist/bundle.html      # esbuild compiles this
+        my-browser/             # compound widget: chrome + webportal
+          src/
+            index.html          # renders URL bar, tabs, nav buttons
+            widget.manifest.json # type: "compound", children: [{type: "webportal"}]
+          dist/bundle.html
+        email-summary/          # custom widget
+          src/index.html
+          dist/bundle.html
     calendar/                   # scene 2
     focus/                      # scene 3
   home/                         # standalone scene (not in a dimension)
@@ -57,20 +65,24 @@ Main Process (Node.js, trusted)
   ├── Window manager (multi-window, each fully independent)
   ├── Scene WCV (one sandboxed WebContentsView per window)
   ├── Webportal manager
-  │   ├── Dual-WCV per portal (chrome WCV + content WCV)
+  │   ├── Single content WCV per portal (no built-in chrome — you build it)
   │   ├── Multi-tab support with per-tab navigation state
   │   ├── Pre-warmed WCV pool for instant portal creation
-  │   └── CSS injection (dom-ready) + extraction (for Claude Code context)
+  │   ├── CSS injection (dom-ready) + extraction (for Claude Code context)
+  │   ├── Downloads (auto-save to ~/Downloads with notification)
+  │   └── Context menu (copy, open in browser, save image)
   ├── File watcher → esbuild → hot reload (~100ms)
   ├── Capability-gated IPC handlers
-  ├── Global keyboard shortcuts (Cmd+E, Cmd+K, etc.)
+  ├── Keyboard shortcuts (window-scoped menu accelerators)
   ├── Terminal manager (node-pty, login shell, scoped per scene)
   ├── dimensions:// protocol (navigation)
   ├── dimensions-asset:// protocol (static file serving)
   └── SQLite database (sql.js/WASM)
 
 Renderer (app chrome, trusted)
-  ├── Top bar (scene title, navigation, mode indicator)
+  ├── Top bar (always visible — scene title, navigation, mode indicator)
+  ├── Toolbar (edit mode — widget tools, layout controls)
+  ├── Scene sidebar (Cmd+S — scene navigation within dimensions)
   ├── Editor tools panel (Claude Code terminal / no-code properties)
   ├── Command palette (Cmd+K)
   └── Themed with Tailwind CSS + CSS custom properties
@@ -80,23 +92,25 @@ Renderer (app chrome, trusted)
 
 - **Scenes** are folders containing widgets, metadata, and wiring
 - **Widgets** are self-contained HTML/JS/CSS — custom UIs, embedded websites, or terminals. Every scene includes a `_background` widget that renders full-screen behind everything else — edit it for gradients, animations, canvas, video, live data, anything
-- **Webportals** embed real websites (Gmail, GitHub, anything) via dual-WebContentsView architecture — browser chrome WCV (URL bar, tabs, nav) + content WCV (the actual site, fully sandboxed). Supports multiple tabs, CSS injection, and per-domain styling rules
-- **Dimensions** group scenes into ordered flows with shared theme and env config. Navigate sequentially with `sdk.navigate.next()` / `previous()`, or jump to any scene. The command palette groups scenes by dimension with breadcrumb navigation
+- **Webportals** are bare content WCVs that render real websites. No built-in chrome — you control them from custom widgets via `sdk.portal.*`. This means you can build any browser UI you want, or embed sites with no chrome at all
+- **Compound widgets** group child widgets (portals, custom widgets) into one draggable unit with internal layout (anchor: top/bottom/left/right/fill). A "browser" is a compound with a custom chrome widget + webportal child
+- **Dimensions** group scenes into ordered flows with shared theme and env config
 - **`@dimensions/sdk`** gives widgets access to storage, network, navigation, theming, portal control, and more — all capability-gated
-- **Dataflow** wires widgets together — a schedule widget can drive a portal's URL, a theme widget can inject CSS into portals, outputs from one widget feed inputs to another via `connections.json`
+- **Dataflow** wires widgets together — outputs from one widget feed inputs to another via `connections.json`
+- **Two layout modes:** Canvas (absolute positioning, viewport scaling, drag/resize) and Layout (CSS via `layout.html`, flexbox/grid, `<dimensions-widget>` custom element)
 - **Two protocols:** `dimensions://` for navigation, `dimensions-asset://` for static file serving — separated for security
 
 ### Edit mode / Use mode
 
 The **top bar** is always visible — scene title, dimension breadcrumbs, navigation, and mode indicator.
 
-**Use mode** (default): Scene fills the window below the top bar. The scene defines all interaction — the app imposes nothing. Could be a dashboard, a workspace, a game, anything.
+**Use mode** (default): Scene fills the window below the top bar. The scene defines all interaction — the app imposes nothing.
 
-**Edit mode** (`Cmd+E`): Right panel appears with a Claude Code terminal (scoped to the scene folder) or a no-code properties panel. Widgets show drag/resize handles. Webportals freeze for interaction passthrough. All changes persist to `meta.json` on disk.
+**Edit mode** (`Cmd+E`): Toolbar and right panel appear. Claude Code terminal (scoped to scene folder) or no-code properties panel. Widgets show drag/resize handles (canvas mode). Webportals freeze for interaction passthrough. All changes persist to disk.
 
 ### Widget SDK
 
-Widgets communicate through `@dimensions/sdk` — a lightweight postMessage bridge that routes through the main process. Every SDK method requires a declared capability in the widget's manifest. Capabilities are checked on every IPC call.
+Widgets communicate through `@dimensions/sdk` — a lightweight postMessage bridge that routes through the main process. Every SDK method requires a declared capability in the widget's manifest.
 
 ```typescript
 // Store persistent data
@@ -106,14 +120,35 @@ const val = await sdk.kv.get('count')
 // Fetch from an API (proxied through main process, no CORS)
 const res = await sdk.fetch('https://api.example.com/data')  // requires "network" + allowedHosts
 
-// Control a webportal from a custom widget
-await sdk.portal.navigate('email-portal', 'https://mail.google.com')  // requires "portal-control"
-await sdk.portal.injectCSS('email-portal', 'body { background: #000; }')
+// Control a webportal from a compound widget
+await sdk.portal.navigate('my-portal', 'https://mail.google.com')  // requires "portal-control"
+await sdk.portal.injectCSS('my-portal', 'body { background: #000; }')
+await sdk.portal.onStateChange('my-portal', (state) => {
+  console.log(state.url, state.title, state.canGoBack)
+})
 
 // Wire widgets together via dataflow
-sdk.emit('searchQuery', 'is:unread')  // other widgets/portals connected to this output receive the value
-sdk.on('selectedItem', (item) => { ... })  // receive values from connected widgets
+sdk.emit('searchQuery', 'is:unread')  // connected widgets/portals receive the value
+sdk.on('selectedItem', (item) => { ... })
 ```
+
+### Compound widgets
+
+A compound widget wraps child widgets into one unit. The compound's `index.html` renders the container UI (e.g., browser chrome), and child webportals are positioned as WCVs by the main process.
+
+```json
+{
+  "type": "compound",
+  "capabilities": ["portal-control"],
+  "targetPortals": ["my-portal"],
+  "children": [
+    { "id": "my-portal", "type": "webportal", "url": "https://github.com",
+      "layout": { "anchor": "fill", "top": 38 } }
+  ]
+}
+```
+
+The compound's source code renders a URL bar and uses `sdk.portal.*` to control the child portal. The portal fills everything below the 38px chrome bar. Move/resize the compound — everything moves together.
 
 ## Getting started
 
@@ -130,13 +165,15 @@ On first launch, the app creates `~/Dimensions/home/` with a starter scene. No s
 
 | Shortcut | Action |
 |---|---|
-| `Cmd+E` | Toggle edit mode (top bar + right editor panel) |
-| `Cmd+S` | Toggle scene sidebar (left panel — scene navigation within dimensions) |
+| `Cmd+E` | Toggle edit mode (toolbar + right editor panel) |
+| `Cmd+S` | Toggle scene sidebar (left panel — scene navigation) |
 | `Cmd+K` | Command palette |
 | `Cmd+1` / `Cmd+2` | Claude Code terminal / No-code panel |
 | `Cmd+[` / `Cmd+]` | Navigate back / forward |
 | `` Cmd+` `` | Focus terminal |
 | `Cmd+Shift+F` | Toggle Live / Files view |
+| `Cmd+`+`/`-` | Zoom in / out |
+| `Cmd+0` | Reset zoom |
 
 ## Tech stack
 
@@ -152,7 +189,6 @@ On first launch, the app creates `~/Dimensions/home/` with a starter scene. No s
 | esbuild + chokidar | Widget compilation + file watching |
 | Zod | Schema validation for all data files |
 | Framer Motion | Animations |
-| tinykeys | Keyboard shortcuts (renderer fallback) |
 
 ## Security model
 
@@ -160,19 +196,19 @@ On first launch, the app creates `~/Dimensions/home/` with a starter scene. No s
 |---|---|---|
 | Renderer | Trusted | App chrome only |
 | Scene WCV | Sandboxed | SDK via postMessage |
-| Webportal WCVs | Most sandboxed | Web only, no SDK |
+| Webportal WCVs | Most sandboxed | Web only, no SDK, no preload |
 | Widget iframes | `sandbox` attribute | SDK via postMessage |
 
 - Every SDK call is capability-gated — widgets declare capabilities in their manifest, main process checks on every IPC call
+- Portal state updates only sent to widgets with `portal-control` capability + matching `targetPortals`
 - Network requests proxied through main process, host-checked against manifest allowlist
 - Environment variables stored in OS keychain via `safeStorage`, never in files or SQLite
 - Path traversal blocked at every boundary (`assertPathWithin` on all file operations)
-- IPC channels explicitly whitelisted in preload scripts, data sanitized on every bridge crossing (`__proto__`, `constructor`, `prototype` stripped)
-- Webportal content WCVs get **no preload and no SDK access** — fully isolated from the app. Chrome WCVs get a minimal preload for navigation commands only
+- IPC channels explicitly whitelisted in preload scripts, data sanitized on every bridge crossing
+- Webportal content WCVs get **no preload and no SDK access** — fully isolated from the app
 - Portal popups blocked via `setWindowOpenHandler` — external links open in default browser
-- Audio/video explicitly stopped before any WCV destruction (mute → pause → clear src)
-- Terminal PTY processes scoped to scene folder — no access outside `~/Dimensions/`
-- Global shortcuts guarded by focus check — don't fire when app isn't focused
+- Audio/video explicitly stopped before any WCV destruction
+- Terminal PTY processes scoped to scene folder
 - GUI-launched PATH resolution ensures terminals work when opened from Finder/Dock
 
 ## Roadmap
@@ -184,7 +220,7 @@ See [`docs/future-features/`](docs/future-features/) for what's planned:
 
 ## Status
 
-Active development. V1 is single-player, local-only. Open source, MIT licensed.
+Active development. V1 is single-player, local-only. Open source, Apache-2.0 licensed.
 
 ## Contributing
 

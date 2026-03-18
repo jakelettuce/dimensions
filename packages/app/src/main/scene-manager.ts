@@ -289,18 +289,43 @@ export function generateSceneHtml(scene: SceneState): string {
           style="position:absolute;left:0;top:0;width:100%;height:100%;border:none;background:transparent;"
         ></iframe>` : ''
 
-        // Child placeholders for portal WCVs (positioned within compound bounds)
+        // Compute insets from sibling anchored children
+        const siblingInsets = { top: 0, bottom: 0, left: 0, right: 0 }
+        for (const c of children) {
+          if (c.layout.anchor === 'top') siblingInsets.top += (c.layout.height ?? 36)
+          if (c.layout.anchor === 'bottom') siblingInsets.bottom += (c.layout.height ?? 36)
+          if (c.layout.anchor === 'left') siblingInsets.left += (c.layout.width ?? 200)
+          if (c.layout.anchor === 'right') siblingInsets.right += (c.layout.width ?? 200)
+        }
+
+        // Child placeholders for portal WCVs — responsive CSS
         const childPlaceholders = children
           .filter(c => c.type === 'webportal')
           .map(child => {
-            const cb = childBounds.get(child.id)
-            if (!cb) return ''
             const portalId = `${entry.id}:${child.id}`
+            const { anchor } = child.layout
+            let css = 'position:absolute;'
+            if (anchor === 'fill') {
+              // Sibling insets + explicit overrides (for compound's own UI chrome)
+              const t = siblingInsets.top + (child.layout.top ?? 0)
+              const b = siblingInsets.bottom + (child.layout.bottom ?? 0)
+              const l = siblingInsets.left + (child.layout.left ?? 0)
+              const r = siblingInsets.right + (child.layout.right ?? 0)
+              css += `top:${t}px;bottom:${b}px;left:${l}px;right:${r}px;`
+            } else if (anchor === 'top') {
+              css += `top:0;left:0;right:0;height:${child.layout.height ?? 36}px;`
+            } else if (anchor === 'bottom') {
+              css += `bottom:0;left:0;right:0;height:${child.layout.height ?? 36}px;`
+            } else if (anchor === 'left') {
+              css += `top:0;bottom:0;left:0;width:${child.layout.width ?? 200}px;`
+            } else if (anchor === 'right') {
+              css += `top:0;bottom:0;right:0;width:${child.layout.width ?? 200}px;`
+            }
             return `<div class="compound-portal-placeholder"
               data-portal-id="${portalId}"
               data-compound-id="${entry.id}"
               data-child-id="${child.id}"
-              style="position:absolute;left:${cb.x}px;top:${cb.y}px;width:${cb.width}px;height:${cb.height}px;"
+              style="${css}"
             ></div>`
           })
           .join('\n        ')
@@ -866,20 +891,37 @@ export function generateLayoutSceneHtml(scene: SceneState): string {
           var cleanups = [];
           var scroller = document.getElementById('scene-scroll');
 
+          // Compute insets from sibling anchored children for fill positioning
+          var insets = { top: 0, bottom: 0, left: 0, right: 0 };
+          entry.children.forEach(function(c) {
+            if (c.layout.anchor === 'top') insets.top += (c.layout.height || 36);
+            if (c.layout.anchor === 'bottom') insets.bottom += (c.layout.height || 36);
+            if (c.layout.anchor === 'left') insets.left += (c.layout.width || 200);
+            if (c.layout.anchor === 'right') insets.right += (c.layout.width || 200);
+          });
+
           entry.children.forEach(function(child) {
             if (child.type !== 'webportal') return;
             var portalId = compoundId + ':' + child.id;
             var placeholder = document.createElement('div');
             placeholder.className = 'compound-portal-placeholder';
             placeholder.dataset.portalId = portalId;
-            // Layout rules determine position — for layout mode, use CSS within the compound
-            // Default: fill the compound element
-            if (child.layout.anchor === 'fill') {
-              placeholder.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;';
-            } else if (child.layout.anchor === 'top') {
-              placeholder.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:' + (child.layout.height || 36) + 'px;';
-            } else if (child.layout.anchor === 'bottom') {
-              placeholder.style.cssText = 'position:absolute;left:0;bottom:0;width:100%;height:' + (child.layout.height || 36) + 'px;';
+
+            var anchor = child.layout.anchor;
+            if (anchor === 'fill') {
+              var t = insets.top + (child.layout.top || 0);
+              var b = insets.bottom + (child.layout.bottom || 0);
+              var l = insets.left + (child.layout.left || 0);
+              var r = insets.right + (child.layout.right || 0);
+              placeholder.style.cssText = 'position:absolute;top:'+t+'px;bottom:'+b+'px;left:'+l+'px;right:'+r+'px;';
+            } else if (anchor === 'top') {
+              placeholder.style.cssText = 'position:absolute;left:0;top:0;right:0;height:' + (child.layout.height || 36) + 'px;';
+            } else if (anchor === 'bottom') {
+              placeholder.style.cssText = 'position:absolute;left:0;bottom:0;right:0;height:' + (child.layout.height || 36) + 'px;';
+            } else if (anchor === 'left') {
+              placeholder.style.cssText = 'position:absolute;top:0;bottom:0;left:0;width:' + (child.layout.width || 200) + 'px;';
+            } else if (anchor === 'right') {
+              placeholder.style.cssText = 'position:absolute;top:0;bottom:0;right:0;width:' + (child.layout.width || 200) + 'px;';
             }
             this.appendChild(placeholder);
 

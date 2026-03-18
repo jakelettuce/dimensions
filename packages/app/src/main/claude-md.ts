@@ -160,21 +160,39 @@ The SDK is automatically injected into every custom widget. Access it via \`wind
 - \`sdk.navigate.forward()\` \u2192 void
 
 ### Portal Control (requires "portal-control")
-Portals are bare content WCVs — no built-in chrome. Use \`sdk.portal.*\` to build your own chrome.
+Portals are bare content WCVs — no built-in chrome. Use \`sdk.portal.*\` to build your own UI.
 
-- \`sdk.portal.navigate(portalId, url)\` \u2192 Promise<void> \u2014 Navigate to URL
-- \`sdk.portal.goBack(portalId)\` \u2192 Promise<void> \u2014 Navigate back
-- \`sdk.portal.goForward(portalId)\` \u2192 Promise<void> \u2014 Navigate forward
-- \`sdk.portal.reload(portalId)\` \u2192 Promise<void> \u2014 Reload current page
-- \`sdk.portal.stop(portalId)\` \u2192 Promise<void> \u2014 Stop loading
-- \`sdk.portal.setVisible(portalId, visible)\` \u2192 Promise<void> \u2014 Show/hide portal WCV
-- \`sdk.portal.injectCSS(portalId, css)\` \u2192 Promise<{key}> \u2014 Inject CSS, returns key for removal
-- \`sdk.portal.removeCSS(portalId, key)\` \u2192 Promise<void> \u2014 Remove injected CSS by key
-- \`sdk.portal.newTab(portalId, url?)\` \u2192 Promise<{tabId}> \u2014 Open new tab
-- \`sdk.portal.closeTab(portalId, tabId)\` \u2192 Promise<void> \u2014 Close tab (can't close last)
-- \`sdk.portal.switchTab(portalId, tabId)\` \u2192 Promise<void> \u2014 Switch active tab
-- \`sdk.portal.getState(portalId)\` \u2192 Promise<PortalState> \u2014 Get current state
-- \`sdk.portal.onStateChange(portalId, cb)\` \u2192 void \u2014 Subscribe to state changes (url, title, loading, canGoBack/Forward)
+The \`portalId\` is the child's \`id\` from the compound manifest (e.g. \`"browser-portal"\`),
+NOT the widget instance ULID. The system resolves it automatically.
+
+**Navigation:**
+- \`sdk.portal.navigate(portalId, url)\` \u2192 Promise<void>
+- \`sdk.portal.goBack(portalId)\` \u2192 Promise<void>
+- \`sdk.portal.goForward(portalId)\` \u2192 Promise<void>
+- \`sdk.portal.reload(portalId)\` \u2192 Promise<void>
+- \`sdk.portal.stop(portalId)\` \u2192 Promise<void>
+
+**Tabs:**
+- \`sdk.portal.newTab(portalId, url?)\` \u2192 Promise<{tabId}>
+- \`sdk.portal.closeTab(portalId, tabId)\` \u2192 Promise<void> (can't close last tab)
+- \`sdk.portal.switchTab(portalId, tabId)\` \u2192 Promise<void>
+
+**CSS injection:**
+- \`sdk.portal.injectCSS(portalId, css)\` \u2192 Promise<{key}>
+- \`sdk.portal.removeCSS(portalId, key)\` \u2192 Promise<void>
+
+**Visibility & state:**
+- \`sdk.portal.setVisible(portalId, visible)\` \u2192 Promise<void>
+- \`sdk.portal.getState(portalId)\` \u2192 Promise<PortalState>
+- \`sdk.portal.onStateChange(portalId, cb)\` \u2192 void
+
+**PortalState shape:**
+\`\`\`typescript
+{ url: string, title: string, isLoading: boolean,
+  canGoBack: boolean, canGoForward: boolean, isPlayingAudio: boolean,
+  activeTabId: string,
+  tabs: Array<{ id, url, title, isLoading, canGoBack, canGoForward, isActive }> }
+\`\`\`
 
 ### Theme (requires "theme")
 - \`sdk.theme.get()\` \u2192 Promise<ThemeVars>
@@ -211,25 +229,104 @@ Portals are bare content WCVs — no built-in chrome. Use \`sdk.portal.*\` to bu
 
 ## Compound Widgets (type: "compound")
 
-A compound widget contains child widgets laid out within its bounds. The compound's \`index.html\`
-renders the container UI (e.g. a browser chrome bar). Child portals are positioned as WCVs by the main process.
+A compound widget wraps child widgets within its bounds. The compound's \`index.html\`
+renders the container UI. Child portals are positioned as WCVs by the main process.
 
-### Creating a Browser (compound + portal)
+### Step-by-step: Create a Browser Widget
 
-1. Create manifest with \`type: "compound"\`, \`capabilities: ["portal-control"]\`,
-   \`targetPortals: ["child-id"]\`, and \`children\` array
-2. Child layout anchors: \`top\` (fixed height), \`bottom\`, \`left\` (fixed width), \`right\`, \`fill\` (remaining space)
-3. The compound's \`index.html\` renders chrome UI and uses \`sdk.portal.*\` to control the child portal
-4. Use \`sdk.portal.onStateChange(childId, cb)\` to track URL, title, loading, navigation state
+**1. Create the manifest** (\`widgets/my-browser/src/widget.manifest.json\`):
+\`\`\`json
+{
+  "id": "my-browser",
+  "type": "compound",
+  "title": "My Browser",
+  "capabilities": ["portal-control"],
+  "targetPortals": ["my-portal"],
+  "children": [
+    {
+      "id": "my-portal",
+      "type": "webportal",
+      "url": "https://example.com",
+      "layout": { "anchor": "fill", "top": 38 }
+    }
+  ]
+}
+\`\`\`
 
-### Creating a Chrome-less Embed
+Key details:
+- \`targetPortals\` MUST list the child IDs you want to control
+- \`layout.top: 38\` reserves 38px at the top for your chrome bar — the portal fills below it
+- The child \`id\` (\`"my-portal"\`) is what you pass to all \`sdk.portal.*\` calls
 
-Just use a standalone \`webportal\` widget — no compound needed. The portal renders at full widget bounds.
-Control it from any widget with \`portal-control\` capability and matching \`targetPortals\`.
+**2. Create the chrome UI** (\`widgets/my-browser/src/index.html\`):
+\`\`\`html
+<!DOCTYPE html>
+<html><head><style>
+  * { margin:0; box-sizing:border-box; }
+  body { font-family:system-ui; background:#1e1e1e; color:#ddd; }
+  .bar { display:flex; gap:4px; padding:4px 8px; height:36px; align-items:center; }
+  button { background:none; border:none; color:#888; cursor:pointer; font-size:14px; }
+  input { flex:1; background:#111; border:1px solid #333; border-radius:6px;
+          padding:3px 10px; color:#ccc; font-size:12px; outline:none; }
+</style></head>
+<body>
+  <div class="bar">
+    <button id="back">\u2039</button>
+    <button id="fwd">\u203a</button>
+    <button id="reload">\u27f3</button>
+    <input id="url" type="text" />
+  </div>
+<script>
+  var P = 'my-portal'; // matches children[0].id
+  function ready(fn) {
+    if (window.sdk) return fn(sdk);
+    var t = setInterval(function() { if (window.sdk) { clearInterval(t); fn(sdk); } }, 50);
+  }
+  ready(function(sdk) {
+    back.onclick = function() { sdk.portal.goBack(P); };
+    fwd.onclick = function() { sdk.portal.goForward(P); };
+    reload.onclick = function() { sdk.portal.reload(P); };
+    url.onkeydown = function(e) { if (e.key==='Enter') sdk.portal.navigate(P, url.value); };
+    sdk.portal.onStateChange(P, function(s) {
+      url.value = s.url;
+      back.disabled = !s.canGoBack;
+      fwd.disabled = !s.canGoForward;
+    });
+  });
+</script>
+</body></html>
+\`\`\`
 
-### Reference: _browser compound widget
+**3. Add to meta.json:**
+\`\`\`json
+{
+  "id": "ULID_HERE",
+  "widgetType": "my-browser",
+  "manifestPath": "widgets/my-browser/src/widget.manifest.json",
+  "bounds": { "x": 100, "y": 100, "width": 900, "height": 600 }
+}
+\`\`\`
 
-See \`widgets/_browser/\` for a complete example with URL bar, back/forward, reload, and loading indicator.
+The SDK is injected automatically by the builder — do NOT import it.
+
+### Child Layout Rules
+
+Anchored children consume space from the compound's bounds in order:
+- \`{ "anchor": "top", "height": 36 }\` — fixed height strip at top
+- \`{ "anchor": "bottom", "height": 50 }\` — fixed height strip at bottom
+- \`{ "anchor": "left", "width": 200 }\` — fixed width strip at left
+- \`{ "anchor": "right", "width": 300 }\` — fixed width strip at right
+- \`{ "anchor": "fill" }\` — takes remaining space after all anchored children
+- \`{ "anchor": "fill", "top": 38 }\` — fill with inset (reserves space for compound's own UI)
+
+### Chrome-less Portal (no compound)
+
+For a bare webpage embed with no chrome, just use a standalone \`webportal\` widget:
+\`\`\`json
+{ "id": "embed", "type": "webportal", "title": "Embed", "url": "https://example.com", "capabilities": [] }
+\`\`\`
+No compound wrapper needed. The portal renders at full widget bounds.
+Control it from any other widget with \`portal-control\` capability and matching \`targetPortals\`.
 
 ## Building Widgets
 
@@ -261,40 +358,65 @@ Widget instance IDs are ULIDs from meta.json, not the human-readable manifest ID
 
 Rules applied on dom-ready for matching domains. Multiple rules stack in order.
 
-## Layout Mode Reference
+## Layout System
+
+Scenes have two layout modes. The mode is determined by whether \`layout.html\` exists in the scene folder.
 
 ### Canvas Mode (default — no layout.html)
-- Widgets positioned by \`bounds\` in \`meta.json\` (absolute pixels in design space)
-- \`viewport\` in \`meta.json\` defines design resolution (default: 1920×1080)
-- Scene scales to fit available space (Fit mode) or renders at exact pixels (Original mode)
-- Zoom with Cmd+/- or Ctrl+scroll
+Widgets positioned by \`bounds\` in \`meta.json\` (absolute pixels in a design-space viewport).
+
+**Viewport** — set in \`meta.json\`:
+\`\`\`json
+{ "viewport": { "width": 1920, "height": 1080 } }
+\`\`\`
+
+- **Fit mode** (default): scene scales proportionally to fill the window, centered
+- **Original mode**: 1:1 pixels, scroll if viewport exceeds window
+- Zoom: Cmd+/-, Cmd+0, or pinch-to-zoom
+- Two-finger scroll pans the canvas
+
+**Adding a widget in Canvas mode:**
+\`\`\`json
+{
+  "id": "ULID",
+  "widgetType": "my-widget",
+  "manifestPath": "widgets/my-widget/src/widget.manifest.json",
+  "bounds": { "x": 100, "y": 100, "width": 400, "height": 300 }
+}
+\`\`\`
+Drag and resize in edit mode. Bounds are in viewport design pixels.
 
 ### Layout Mode (layout.html exists)
-Create \`layout.html\` in the scene folder to use CSS-driven layout:
+Create \`layout.html\` for full CSS control. Widgets placed via custom element:
 
 \`\`\`html
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; height: 100vh;">
-  <dimensions-widget name="my-widget"></dimensions-widget>
-  <dimensions-widget name="another-widget"></dimensions-widget>
+<!-- Flexbox example -->
+<div style="display:flex; gap:16px; padding:16px; height:100vh;">
+  <dimensions-widget name="clock-widget" style="flex:0 0 200px;"></dimensions-widget>
+  <dimensions-widget name="note-card" style="flex:1;"></dimensions-widget>
 </div>
 \`\`\`
 
-- \`<dimensions-widget name="widget-type">\` places a widget by its type name from the manifest
-- Full CSS freedom: flexbox, grid, percentages, media queries, vh/vw
-- Multiple instances of the same widget type are matched by order against meta.json entries
-- To switch back to Canvas mode, delete \`layout.html\`
+\`\`\`html
+<!-- Grid example -->
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px; height:100vh;">
+  <dimensions-widget name="my-widget" style="grid-column:span 2;"></dimensions-widget>
+  <dimensions-widget name="color-box"></dimensions-widget>
+  <dimensions-widget name="note-card"></dimensions-widget>
+</div>
+\`\`\`
+
+- \`name\` matches the widget's manifest \`id\` (e.g. \`"clock-widget"\`)
+- Full CSS freedom: flexbox, grid, percentages, \`vh\`/\`vw\`, media queries
+- \`bounds\` in meta.json is optional in Layout mode — CSS drives positioning
+- Multiple \`<dimensions-widget name="same-type">\` matched by order against meta.json entries
+- Compound widgets work in layout mode too: \`<dimensions-widget name="my-browser">\`
+- Edit mode: click to select widgets, no drag handles (edit \`layout.html\` instead)
 
 ### Switching Modes
-- **Canvas → Layout:** Create \`layout.html\` in the scene folder
-- **Layout → Canvas:** Delete \`layout.html\` — reverts to Canvas with last-known bounds
-
-### Viewport (meta.json)
-\`\`\`json
-{
-  "viewport": { "width": 1920, "height": 1080 }
-}
-\`\`\`
-Sets the design resolution for Canvas mode. Ignored in Layout mode.
+- **Canvas \u2192 Layout:** Create \`layout.html\` in the scene folder — auto-reloads
+- **Layout \u2192 Canvas:** Delete \`layout.html\` — reverts to Canvas with last-known bounds
+- Hot reload: editing \`layout.html\` triggers automatic scene reload
 `
 
   const outPath = path.join(scene.path, 'CLAUDE.md')
