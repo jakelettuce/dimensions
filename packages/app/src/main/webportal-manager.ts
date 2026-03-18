@@ -1,4 +1,4 @@
-import { WebContentsView, BrowserWindow, ipcMain, shell, Menu, MenuItem, app, dialog } from 'electron'
+import { WebContentsView, BrowserWindow, ipcMain, shell, Menu, MenuItem, app, nativeImage, dialog } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { ulid } from 'ulid'
@@ -655,10 +655,12 @@ export function mountWebportal(
   widgetInstanceId: string,
   widget: WidgetState,
   widgetBounds: Bounds,
+  urlOverride?: string,
 ): void {
   if (dimWin.browserWindow.isDestroyed()) return
-  if (!widget.manifest.url) {
-    console.warn(`Webportal widget "${widget.widgetType}" has no url in manifest`)
+  const url = urlOverride || widget.manifest.url
+  if (!url) {
+    console.warn(`Webportal widget "${widget.widgetType}" has no url`)
     return
   }
 
@@ -679,7 +681,7 @@ export function mountWebportal(
   const sceneBounds = dimWin.sceneWCV.getBounds()
   const { bounds } = calculatePortalBounds(widgetBounds, sceneBounds, dimWin.totalScale)
 
-  const tab = createTab(portal, dimWin, widget.manifest.url)
+  const tab = createTab(portal, dimWin, url)
   portal.activeTabId = tab.id
 
   tab.contentWCV.setBounds(bounds)
@@ -737,7 +739,8 @@ export function mountAllWebportals(dimWin: DimensionsWindow): void {
 
     if (widget.manifest.type === 'webportal') {
       const bounds = entry.bounds ?? { x: 0, y: 0, width: 400, height: 300 }
-      mountWebportal(dimWin, entry.id, widget, bounds)
+      const urlOverride = entry.props?.url as string | undefined
+      mountWebportal(dimWin, entry.id, widget, bounds, urlOverride)
     } else if (widget.manifest.type === 'compound' && widget.manifest.children) {
       for (const child of widget.manifest.children) {
         if (child.type === 'webportal' && child.url) {
@@ -1162,5 +1165,47 @@ export function registerDownloadIpcHandlers(): void {
     pendingDownloads.delete(downloadId)
     try { fs.unlinkSync(pending.tmpPath) } catch {}
     return { success: true }
+  })
+
+  // ── Portal drag: download to temp, initiate OS-level drag ──
+  ipcMain.on('portal:drag-start', async (event, data) => {
+    if (!data?.url || typeof data.url !== 'string') return
+    if (!data.url.startsWith('http://') && !data.url.startsWith('https://')) return
+
+    let dimWin: DimensionsWindow | undefined
+    for (const w of getAllWindows()) {
+      for (const wcv of w.portalWCVs.values()) {
+        if (wcv.webContents.id === event.sender.id) { dimWin = w; break }
+      }
+      if (dimWin) break
+    }
+    if (!dimWin || dimWin.browserWindow.isDestroyed()) return
+
+    try {
+      const urlObj = new URL(data.url)
+      const pathParts = urlObj.pathname.split('/')
+      let filename = decodeURIComponent(pathParts[pathParts.length - 1] || 'download')
+      if (!path.extname(filename)) filename += '.png'
+      const tempFile = path.join(app.getPath('temp'), `dimensions-drag-${ulid()}-${filename}`)
+
+      const response = await fetch(data.url)
+      if (!response.ok) return
+
+      const contentLength = parseInt(response.headers.get('content-length') || '0')
+      if (contentLength > 50 * 1024 * 1024) return
+
+      const buffer = Buffer.from(await response.arrayBuffer())
+      if (buffer.length > 50 * 1024 * 1024) return
+
+      fs.writeFileSync(tempFile, buffer)
+
+      // Default 32x32 icon — instant, no image decoding
+      const icon = nativeImage.createFromDataURL(
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAADlJREFUWEft0LERADAIAzAs/y8dFkAUeJLt6u6e/bz/TgAJkAAJkAAJkAAJkAAJkAAJkAAJkMC3BA4OIAEhKgiMHAAAAABJRU5ErkJggg=='
+      )
+
+      dimWin.sceneWCV.webContents.startDrag({ file: tempFile, icon })
+      setTimeout(() => { try { fs.unlinkSync(tempFile) } catch {} }, 10000)
+    } catch {}
   })
 }

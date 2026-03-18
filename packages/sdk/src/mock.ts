@@ -74,6 +74,7 @@ export function createMockSDK(overrides?: Partial<DimensionsSDK>): DimensionsSDK
     media: {
       onDrop: () => {},
       importDrop: async () => '',
+      importFromUrl: async () => '',
       startDrag: async () => {},
     },
     onShortcut: () => {},

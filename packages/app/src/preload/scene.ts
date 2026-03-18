@@ -51,6 +51,7 @@ const ALLOWED_SDK_CHANNELS = new Set([
   'sdk:props:getAll',
   // Media drag & drop
   'sdk:media:importDrop',
+  'sdk:media:importFromUrl',
   'sdk:media:startDrag',
 ])
 

@@ -195,6 +195,7 @@ export interface DimensionsSDK {
   media: {
     onDrop(cb: (files: DroppedFile[]) => void): void
     importDrop(file: DroppedFile): Promise<string>
+    importFromUrl(url: string): Promise<string>
     startDrag(assetUrl: string): Promise<void>
   }
 

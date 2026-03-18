@@ -340,6 +340,7 @@ export const sdk: DimensionsSDK = {
       mediaDropListeners.push(cb)
     },
     importDrop: (file: DroppedFile) => call<string>('sdk:media:importDrop', file),
+    importFromUrl: (url: string) => call<string>('sdk:media:importFromUrl', url),
     startDrag: (assetUrl: string) => call('sdk:media:startDrag', assetUrl),
   },
 
