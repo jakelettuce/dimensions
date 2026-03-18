@@ -593,11 +593,40 @@ Multiple rules per domain stack in order. CSS is injected on `dom-ready` (before
 
 ### Webportal Architecture
 
-Each webportal uses two WebContentsViews:
-- **Browser chrome WCV** — URL bar, back/forward/reload, tab bar. Our HTML, fully controlled.
-- **Content WCV** — The real website. Fully sandboxed, no preload, no SDK access.
+A webportal is a single sandboxed WebContentsView (no preload, no SDK) that renders a real website. There is no built-in browser chrome — portals are bare content primitives. All browser controls (URL bar, back/forward, tabs) are built as custom widgets that control the portal via `sdk.portal.*`.
 
-Webportals support multiple tabs per portal, with per-tab navigation history, audio detection, and background throttling for inactive tabs (except tabs playing audio).
+This means users can:
+- Build any browser chrome they want (or none at all for chrome-less embeds)
+- Create compound widgets that package chrome + portal as one unit
+- Control portals from any widget via the SDK
+- Build custom tab managers, sidebars, or navigation UIs
+
+Portals support: multiple tabs with per-tab navigation state, CSS injection (dom-ready), CSS extraction for Claude Code context, downloads (auto-save to ~/Downloads), copy/paste, right-click context menus, and audio detection.
+
+### Compound Widgets
+
+A compound widget wraps child widgets (portals, custom widgets) within its bounds. The compound's `index.html` renders the container UI. Child portals are positioned as WCVs by the main process.
+
+```json
+{
+  "type": "compound",
+  "capabilities": ["portal-control"],
+  "targetPortals": ["my-portal"],
+  "children": [
+    { "id": "my-portal", "type": "webportal", "url": "https://github.com",
+      "layout": { "anchor": "fill", "top": 38 } }
+  ]
+}
+```
+
+Child layout rules:
+- `{ "anchor": "top", "height": 36 }` — fixed strip at top
+- `{ "anchor": "bottom", "height": 50 }` — fixed strip at bottom
+- `{ "anchor": "left", "width": 200 }` — fixed strip at left
+- `{ "anchor": "right", "width": 300 }` — fixed strip at right
+- `{ "anchor": "fill" }` — remaining space (with optional `top`/`bottom`/`left`/`right` insets)
+
+In edit mode, the compound gets one set of drag/resize handles. Children are internal — moving the compound moves everything.
 
 ### Webportal Dataflow
 
@@ -646,7 +675,6 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 |---|---|---|---|
 | Renderer | Trusted | App chrome, full IPC | Renderer preload (whitelisted channels) |
 | Scene WCV | Sandboxed | SDK via postMessage | Scene preload (SDK bridge) |
-| Portal chrome WCV | Sandboxed | Navigation commands only | Portal-chrome preload (minimal) |
 | Portal content WCV | Most sandboxed | Web only, zero app access | **None** |
 | Widget iframes | `sandbox` attribute | SDK via postMessage | Inherited from scene |
 
@@ -657,7 +685,8 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 - **Path traversal** — `assertPathWithin()` on all file operations; widgets cannot access files outside their scene
 - **Network proxy** — all widget HTTP requests proxied through main process, host-checked against manifest `allowedHosts`
 - **Secrets encryption** — env variables and secrets stored via Electron `safeStorage` (OS keychain); never in SQLite, never in files, never logged
-- **Portal isolation** — content WCVs get no preload, no SDK, no postMessage bridge; popups blocked via `setWindowOpenHandler`, external links opened in default browser
+- **Portal isolation** — content WCVs get no preload, no SDK, no postMessage bridge; popups blocked via `setWindowOpenHandler`, external links opened in default browser; downloads auto-save to ~/Downloads
+- **Portal state access control** — portal state updates (URL, title, loading) only sent to widgets with `portal-control` capability and the specific portal in their `targetPortals` manifest field
 - **Media cleanup** — audio muted and all media paused/src-cleared before any WCV destruction (prevents phantom audio after app quit)
 - **Terminal scoping** — PTY processes spawned with cwd within `~/Dimensions/` only; PATH resolved from login shell at startup for GUI-launched instances
 - **Global shortcuts** — guarded by `BrowserWindow.getFocusedWindow()` check; don't fire when app is not focused
@@ -701,7 +730,8 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 - Files view (Monaco editor for widget source)
 - `@dimensions/sdk` with all V1 capabilities (kv, assets, network, websocket, env, secrets, editing, dataflow, navigate, theme, portal-control, clipboard, notifications)
 - Pluggable capability framework
-- Dual-WCV webportals with tabs, CSS injection (dom-ready), and CSS extraction for Claude Code
+- Single-WCV webportals (no built-in chrome) with tabs, CSS injection (dom-ready), CSS extraction, downloads, copy/paste, context menus
+- Compound widgets — group child widgets (portals, custom) with internal layout (anchor system)
 - Cross-widget portal control via `sdk.portal.*` and dataflow wiring
 - Environment variable management + per-widget grants
 - OS keychain secrets storage (safeStorage)
