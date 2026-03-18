@@ -173,10 +173,20 @@ export function createWindow(db: Database): DimensionsWindow {
 
   windows.set(windowId, dimWin)
 
-  // Rule 2: Use 'resized' event, NOT 'resize'
-  // Store listener references for cleanup
+  // Final bounds update after drag ends (pixel-perfect)
   const onBoundsUpdate = () => updateSceneWCVBounds(dimWin)
 
+  // Live resize: throttled ~60fps for smooth real-time scaling
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null
+  const onLiveResize = () => {
+    if (resizeTimer) return
+    resizeTimer = setTimeout(() => {
+      resizeTimer = null
+      updateSceneWCVBounds(dimWin)
+    }, 16)
+  }
+
+  browserWindow.on('resize', onLiveResize)
   browserWindow.on('resized', onBoundsUpdate)
   browserWindow.on('maximize', onBoundsUpdate)
   browserWindow.on('unmaximize', onBoundsUpdate)
@@ -190,7 +200,8 @@ export function createWindow(db: Database): DimensionsWindow {
 
   // Cleanup on close
   browserWindow.on('closed', () => {
-    // Remove event listeners
+    if (resizeTimer) clearTimeout(resizeTimer)
+    browserWindow.removeListener('resize', onLiveResize)
     browserWindow.removeListener('resized', onBoundsUpdate)
     browserWindow.removeListener('maximize', onBoundsUpdate)
     browserWindow.removeListener('unmaximize', onBoundsUpdate)
