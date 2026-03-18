@@ -20,7 +20,6 @@ export default defineConfig({
         input: {
           renderer: resolve(__dirname, 'src/preload/renderer.ts'),
           scene: resolve(__dirname, 'src/preload/scene.ts'),
-          'portal-drag': resolve(__dirname, 'src/preload/portal-drag.ts'),
         },
       },
     },

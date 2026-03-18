@@ -1,4 +1,4 @@
-import { WebContentsView, BrowserWindow, ipcMain, shell, Menu, MenuItem, app, nativeImage, dialog } from 'electron'
+import { WebContentsView, BrowserWindow, ipcMain, shell, Menu, MenuItem, app, dialog } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { ulid } from 'ulid'
@@ -276,14 +276,45 @@ function wireContentWCVEvents(
 ): void {
   const wc = tab.contentWCV.webContents
 
+  // Popups (window.open, target=_blank) → allow as real sandboxed BrowserWindow.
+  // Required for OAuth (Google Sign-In) — the opener needs a real window reference
+  // for postMessage communication. The popup is fully sandboxed (no preload, no SDK).
+  // Rate-limited to 3 concurrent popups per portal to prevent abuse.
+  const popupWindows = new Set<Electron.BrowserWindow>()
+  const MAX_POPUPS = 3
+
   wc.setWindowOpenHandler(({ url }) => {
-    try {
-      const parsed = new URL(url)
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        shell.openExternal(url).catch(() => {})
+    // Allow http, https, and about:blank (used by OAuth libraries to test popup support)
+    if (url && url !== 'about:blank') {
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return { action: 'deny' }
+        }
+      } catch {
+        return { action: 'deny' }
       }
-    } catch {}
-    return { action: 'deny' }
+    }
+
+    if (popupWindows.size >= MAX_POPUPS) return { action: 'deny' }
+
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        width: 500,
+        height: 700,
+        webPreferences: {
+          ...SECURE_WEB_PREFERENCES,
+          // No preload — popup is fully sandboxed like portal content
+        },
+      },
+    }
+  })
+
+  // Track popup windows for cleanup
+  wc.on('did-create-window', (popupWindow) => {
+    popupWindows.add(popupWindow)
+    popupWindow.on('closed', () => popupWindows.delete(popupWindow))
   })
 
   wc.on('did-start-navigation', (_event, url) => {
@@ -1169,45 +1200,4 @@ export function registerDownloadIpcHandlers(): void {
     return { success: true }
   })
 
-  // ── Portal drag: download to temp, initiate OS-level drag ──
-  ipcMain.on('portal:drag-start', async (event, data) => {
-    if (!data?.url || typeof data.url !== 'string') return
-    if (!data.url.startsWith('http://') && !data.url.startsWith('https://')) return
-
-    let dimWin: DimensionsWindow | undefined
-    for (const w of getAllWindows()) {
-      for (const wcv of w.portalWCVs.values()) {
-        if (wcv.webContents.id === event.sender.id) { dimWin = w; break }
-      }
-      if (dimWin) break
-    }
-    if (!dimWin || dimWin.browserWindow.isDestroyed()) return
-
-    try {
-      const urlObj = new URL(data.url)
-      const pathParts = urlObj.pathname.split('/')
-      let filename = path.basename(decodeURIComponent(pathParts[pathParts.length - 1] || 'download'))
-      if (!path.extname(filename)) filename += '.png'
-      const tempFile = path.join(app.getPath('temp'), `dimensions-drag-${ulid()}-${filename}`)
-
-      const response = await fetch(data.url)
-      if (!response.ok) return
-
-      const contentLength = parseInt(response.headers.get('content-length') || '0')
-      if (contentLength > 50 * 1024 * 1024) return
-
-      const buffer = Buffer.from(await response.arrayBuffer())
-      if (buffer.length > 50 * 1024 * 1024) return
-
-      fs.writeFileSync(tempFile, buffer)
-
-      // Default 32x32 icon — instant, no image decoding
-      const icon = nativeImage.createFromDataURL(
-        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAADlJREFUWEft0LERADAIAzAs/y8dFkAUeJLt6u6e/bz/TgAJkAAJkAAJkAAJkAAJkAAJkAAJkMC3BA4OIAEhKgiMHAAAAABJRU5ErkJggg=='
-      )
-
-      dimWin.sceneWCV.webContents.startDrag({ file: tempFile, icon })
-      setTimeout(() => { try { fs.unlinkSync(tempFile) } catch {} }, 10000)
-    } catch {}
-  })
 }
