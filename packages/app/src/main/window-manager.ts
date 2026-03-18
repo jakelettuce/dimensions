@@ -35,6 +35,7 @@ export interface DimensionsWindow {
   scaleMode: 'fit' | 'original'
   totalScale: number
   layoutWidgetBounds: Map<string, Bounds>
+  filesMode: boolean
 }
 
 // ── Window registry ──
@@ -169,6 +170,7 @@ export function createWindow(db: Database): DimensionsWindow {
     scaleMode: 'fit',
     totalScale: 1,
     layoutWidgetBounds: new Map(),
+    filesMode: false,
   }
 
   windows.set(windowId, dimWin)
@@ -279,18 +281,18 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
 
       dimWin.sceneWCV.webContents.loadURL(sceneUrl)
 
-      // Mount webportal widgets after scene loads
-      mountAllWebportals(dimWin)
+      // Mount portals and configure edit mode — skip if in files mode
+      if (!dimWin.filesMode) {
+        mountAllWebportals(dimWin)
 
-      // If in edit mode, freeze the newly mounted portals
-      if (dimWin.editMode) {
-        freezePortals(dimWin, true)
-        // Also tell the new scene HTML it's in edit mode
-        dimWin.sceneWCV.webContents.once('did-finish-load', () => {
-          if (dimWin.editMode && !dimWin.sceneWCV.webContents.isDestroyed()) {
-            dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
-          }
-        })
+        if (dimWin.editMode) {
+          freezePortals(dimWin, true)
+          dimWin.sceneWCV.webContents.once('did-finish-load', () => {
+            if (dimWin.editMode && !dimWin.sceneWCV.webContents.isDestroyed()) {
+              dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
+            }
+          })
+        }
       }
 
       // Generate CLAUDE.md for Claude Code context
@@ -407,15 +409,18 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
           const sceneUrl = buildAssetUrl(sceneRelative)
 
           dimWin.sceneWCV.webContents.loadURL(sceneUrl)
-          mountAllWebportals(dimWin)
 
-          if (dimWin.editMode) {
-            freezePortals(dimWin, true)
-            dimWin.sceneWCV.webContents.once('did-finish-load', () => {
-              if (dimWin.editMode && !dimWin.sceneWCV.webContents.isDestroyed()) {
-                dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
-              }
-            })
+          if (!dimWin.filesMode) {
+            mountAllWebportals(dimWin)
+
+            if (dimWin.editMode) {
+              freezePortals(dimWin, true)
+              dimWin.sceneWCV.webContents.once('did-finish-load', () => {
+                if (dimWin.editMode && !dimWin.sceneWCV.webContents.isDestroyed()) {
+                  dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
+                }
+              })
+            }
           }
 
           writeAgentContextFiles(updatedScene)
@@ -461,6 +466,11 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
       viewport: dimWin.currentScene.meta.viewport ?? null,
       scaleMode: dimWin.scaleMode,
     }))
+  }
+
+  // In files mode, keep WCVs hidden — scene data is loaded but not visible
+  if (dimWin.filesMode && !dimWin.browserWindow.isDestroyed()) {
+    try { dimWin.browserWindow.contentView.removeChildView(dimWin.sceneWCV) } catch {}
   }
 }
 

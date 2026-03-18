@@ -289,6 +289,7 @@ export function registerShortcuts(db: Database): void {
     const dimWin = findWindowByWebContentsId(event.sender.id)
     if (!dimWin) return
     if (visible) {
+      dimWin.filesMode = false
       if (dimWin.currentScene) {
         const scenePath = dimWin.currentScene.path
         const dimensionId = dimWin.currentScene.dimensionId
@@ -308,11 +309,14 @@ export function registerShortcuts(db: Database): void {
             dimWin.sceneWCV.webContents.send('scene:edit-mode', true)
           }
         })
+        // Mount portals that were skipped in files mode
+        mountAllWebportals(dimWin)
         repositionPortals(dimWin)
       } else {
         showAllWCVs(dimWin)
       }
     } else {
+      dimWin.filesMode = true
       hideAllWCVs(dimWin)
     }
   })
