@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
 import { TopBar } from '@/components/top-bar/TopBar'
@@ -8,6 +8,7 @@ import { CommandPalette } from '@/components/command-palette/CommandPalette'
 import { SceneSidebar } from '@/components/scene-sidebar/SceneSidebar'
 import { ToolBar } from '@/components/top-bar/ToolBar'
 import { ResizeHandle } from '@/components/ResizeHandle'
+import { DownloadConfirmModal, type DownloadRequest } from '@/components/download-modal/DownloadConfirmModal'
 import '@xterm/xterm/css/xterm.css'
 
 export default function App() {
@@ -17,6 +18,28 @@ export default function App() {
     sceneSidebarWidth, setSceneSidebarWidth,
     editorPanelWidth, setEditorPanelWidth,
   } = useAppStore()
+
+  const [downloadRequest, setDownloadRequest] = useState<DownloadRequest | null>(null)
+
+  useEffect(() => {
+    window.dimensions.onDownloadConfirm((data) => {
+      // One modal at a time — cancel new downloads if one is already pending
+      if (downloadRequest) {
+        window.dimensions.cancelDownload(data.downloadId)
+        return
+      }
+      setDownloadRequest(data)
+    })
+    window.dimensions.onDownloadComplete((data) => {
+      if (data.state === 'completed') {
+        setBuildStatus(`Downloaded: ${data.filename}`)
+        setTimeout(() => setBuildStatus(''), 4000)
+      }
+    })
+    window.dimensions.onDownloadTimeout((data) => {
+      setDownloadRequest(prev => prev?.downloadId === data.downloadId ? null : prev)
+    })
+  }, [])
 
   useEffect(() => {
     // Edit mode — when leaving, switch back to live view
@@ -180,6 +203,12 @@ export default function App() {
       </div>
 
       <CommandPalette />
+      {downloadRequest && (
+        <DownloadConfirmModal
+          request={downloadRequest}
+          onClose={() => setDownloadRequest(null)}
+        />
+      )}
     </div>
   )
 }

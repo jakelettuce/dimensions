@@ -733,7 +733,8 @@ Primary navigation. Shows recent scenes, navigation history, quick actions (new 
 - **Path traversal** — `assertPathWithin()` on all file operations; widgets cannot access files outside their scene
 - **Network proxy** — all widget HTTP requests proxied through main process, host-checked against manifest `allowedHosts`
 - **Secrets encryption** — env variables and secrets stored via Electron `safeStorage` (OS keychain); never in SQLite, never in files, never logged
-- **Portal isolation** — content WCVs get no preload, no SDK, no postMessage bridge; popups blocked via `setWindowOpenHandler`, external links opened in default browser; downloads auto-save to ~/Downloads
+- **Portal isolation** — content WCVs get no preload, no SDK, no postMessage bridge; popups blocked via `setWindowOpenHandler`, external links opened in default browser
+- **Download confirmation** — every file download from a webportal is paused immediately (zero bytes to disk) and requires explicit user confirmation via an app-level modal showing filename, size, and source domain. Portal cannot bypass, dismiss, or auto-confirm the modal. 60-second auto-cancel timeout. One modal at a time to prevent spam. Critical security boundary for V2 multiplayer
 - **Portal state access control** — portal state updates (URL, title, loading) only sent to widgets with `portal-control` capability and the specific portal in their `targetPortals` manifest field
 - **Media cleanup** — audio muted and all media paused/src-cleared before any WCV destruction (prevents phantom audio after app quit)
 - **Terminal scoping** — PTY processes spawned with cwd within `~/Dimensions/` only; PATH resolved from login shell at startup for GUI-launched instances

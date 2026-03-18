@@ -29,6 +29,8 @@ const INVOKE_CHANNELS = new Set([
   'delete-media',
   'hide-wcvs',
   'show-wcvs',
+  'download:accept',
+  'download:cancel',
 ])
 
 const SEND_CHANNELS = new Set([
@@ -55,6 +57,9 @@ const RECEIVE_CHANNELS = new Set([
   'zoom-changed',
   'scene-updated',
   'widget:props-updated',
+  'download:confirm',
+  'download:complete',
+  'download:timeout',
 ])
 
 // Sanitize data crossing the bridge
@@ -203,6 +208,19 @@ contextBridge.exposeInMainWorld('dimensions', {
   // Widget props updated
   onWidgetPropsUpdated: (cb: (data: { widgetId: string; props: Record<string, any> }) => void) => {
     ipcRenderer.on('widget:props-updated', (_event, data) => cb(sanitize(data) as any))
+  },
+
+  // Downloads
+  acceptDownload: (downloadId: string) => ipcRenderer.invoke('download:accept', downloadId),
+  cancelDownload: (downloadId: string) => ipcRenderer.invoke('download:cancel', downloadId),
+  onDownloadConfirm: (cb: (data: any) => void) => {
+    ipcRenderer.on('download:confirm', (_e, data) => cb(sanitize(data) as any))
+  },
+  onDownloadComplete: (cb: (data: any) => void) => {
+    ipcRenderer.on('download:complete', (_e, data) => cb(sanitize(data) as any))
+  },
+  onDownloadTimeout: (cb: (data: any) => void) => {
+    ipcRenderer.on('download:timeout', (_e, data) => cb(sanitize(data) as any))
   },
 
   // Scene updated (meta change outside edit mode)

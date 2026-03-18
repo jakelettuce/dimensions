@@ -1,4 +1,4 @@
-import { WebContentsView, ipcMain, shell, Menu, MenuItem, Notification, app } from 'electron'
+import { WebContentsView, ipcMain, shell, Menu, MenuItem, app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { ulid } from 'ulid'
@@ -85,6 +85,7 @@ export interface PortalInstance {
 // ── Portal registry ──
 
 const portals = new Map<string, PortalInstance>()
+const pendingDownloads = new Map<string, Electron.DownloadItem>()
 
 export function getPortal(id: string): PortalInstance | undefined {
   return portals.get(id)
@@ -365,18 +366,41 @@ function wireContentWCVEvents(
     }
   })
 
-  // ── Downloads: auto-save to ~/Downloads with notification ──
+  // ── Downloads: pause immediately, require user confirmation via modal ──
   wc.session.on('will-download', (_event, item) => {
-    const defaultPath = path.join(app.getPath('downloads'), item.getFilename())
-    item.setSavePath(defaultPath)
+    item.pause()
 
-    item.on('done', (_e, state) => {
-      if (state === 'completed') {
-        new Notification({
-          title: 'Download Complete',
-          body: item.getFilename(),
-        }).show()
+    const downloadId = ulid()
+    const filename = item.getFilename()
+    const fileSize = item.getTotalBytes()
+    const sourceUrl = item.getURL()
+    const mimeType = item.getMimeType()
+
+    pendingDownloads.set(downloadId, item)
+
+    if (dimWin.browserWindow.isDestroyed()) {
+      item.cancel()
+      pendingDownloads.delete(downloadId)
+      return
+    }
+
+    dimWin.browserWindow.webContents.send('download:confirm', {
+      downloadId, filename, fileSize, sourceUrl, mimeType,
+    })
+
+    // Auto-cancel after 60s if unconfirmed
+    setTimeout(() => {
+      if (pendingDownloads.has(downloadId)) {
+        item.cancel()
+        pendingDownloads.delete(downloadId)
+        if (!dimWin.browserWindow.isDestroyed()) {
+          dimWin.browserWindow.webContents.send('download:timeout', { downloadId })
+        }
       }
+    }, 60000)
+
+    item.on('done', () => {
+      pendingDownloads.delete(downloadId)
     })
   })
 
@@ -967,4 +991,43 @@ export function freezePortals(dimWin: DimensionsWindow, freeze: boolean): void {
       }
     }
   }
+}
+
+// ── Download confirmation IPC ──
+
+export function registerDownloadIpcHandlers(): void {
+  ipcMain.handle('download:accept', (_event, downloadId: unknown) => {
+    if (typeof downloadId !== 'string') return { error: 'invalid_id' }
+    const item = pendingDownloads.get(downloadId)
+    if (!item) return { error: 'download_not_found' }
+
+    const savePath = path.join(app.getPath('downloads'), item.getFilename())
+    item.setSavePath(savePath)
+    item.resume()
+    pendingDownloads.delete(downloadId)
+
+    item.on('done', (_e, state) => {
+      for (const dimWin of getAllWindows()) {
+        if (dimWin.browserWindow.isDestroyed()) continue
+        dimWin.browserWindow.webContents.send('download:complete', {
+          downloadId,
+          state,
+          savePath: state === 'completed' ? savePath : null,
+          filename: item.getFilename(),
+        })
+        break
+      }
+    })
+
+    return { success: true, savePath }
+  })
+
+  ipcMain.handle('download:cancel', (_event, downloadId: unknown) => {
+    if (typeof downloadId !== 'string') return { error: 'invalid_id' }
+    const item = pendingDownloads.get(downloadId)
+    if (!item) return { error: 'download_not_found' }
+    item.cancel()
+    pendingDownloads.delete(downloadId)
+    return { success: true }
+  })
 }

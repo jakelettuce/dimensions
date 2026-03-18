@@ -40,7 +40,7 @@ import type { WidgetState, SceneState } from './scene-manager'
 import type { DimensionsWindow } from './window-manager'
 import { registerCapabilities } from './capabilities/index'
 import { registerTerminalIpcHandlers } from './terminal'
-import { repositionPortals, setWindowGetter } from './webportal-manager'
+import { repositionPortals, setWindowGetter, registerDownloadIpcHandlers } from './webportal-manager'
 import { registerShortcuts, unregisterGlobalShortcuts } from './shortcuts'
 import { registerFileOperationHandlers } from './file-operations'
 import { HOME_SCENE_DIR, ASSET_ORIGIN } from './constants'
@@ -56,6 +56,7 @@ app.whenReady().then(async () => {
   registerProtocolHandlers()
   setWindowGetter(getAllWindows)
   registerWindowIpcHandlers()
+  registerDownloadIpcHandlers()
   registerTerminalIpcHandlers()
   registerFileOperationHandlers()
   registerShortcuts(db)

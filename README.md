@@ -227,6 +227,7 @@ On first launch, the app creates `~/Dimensions/home/` with a starter scene. No s
 - IPC channels explicitly whitelisted in preload scripts, data sanitized on every bridge crossing
 - Webportal content WCVs get **no preload and no SDK access** — fully isolated from the app
 - Portal popups blocked via `setWindowOpenHandler` — external links open in default browser
+- **All downloads require explicit user confirmation** — app-level modal shows filename, size, source domain before any bytes are written to disk. 60-second auto-cancel timeout. Portal cannot bypass, dismiss, or auto-confirm. Critical for V2 multiplayer where others share dimensions with embedded webportals
 - Audio/video explicitly stopped before any WCV destruction
 - Terminal PTY processes scoped to scene folder
 - GUI-launched PATH resolution ensures terminals work when opened from Finder/Dock
