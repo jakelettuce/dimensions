@@ -6,7 +6,39 @@ import { SECURE_WEB_PREFERENCES, DIMENSIONS_DIR } from './constants'
 import { extractAndSaveStylesheets, applyPortalRules } from './css-injection'
 import type { DimensionsWindow } from './window-manager'
 import type { WidgetState } from './scene-manager'
-import type { Bounds } from './schemas'
+import type { Bounds, WidgetManifest } from './schemas'
+
+// ── Accelerator matching ──
+// Parses "CmdOrCtrl+T" style strings and matches against Electron Input events.
+
+function matchAccelerator(accel: string, input: Electron.Input): boolean {
+  const parts = accel.toLowerCase().split('+')
+  const key = parts[parts.length - 1]
+  const mods = new Set(parts.slice(0, -1))
+
+  const needCmd = mods.has('cmdorctrl') || mods.has('cmd') || mods.has('meta')
+  const needCtrl = mods.has('cmdorctrl') || mods.has('ctrl') || mods.has('control')
+  const needShift = mods.has('shift')
+  const needAlt = mods.has('alt') || mods.has('option')
+
+  const isMac = process.platform === 'darwin'
+  const modOk = isMac
+    ? (needCmd ? input.meta : !input.meta) && (!needShift || input.shift) && (!needAlt || input.alt)
+    : (needCtrl ? input.control : !input.control) && (!needShift || input.shift) && (!needAlt || input.alt)
+
+  // Extra: if shift not required, don't fail if it's pressed (for Cmd+Shift combos)
+  const shiftOk = needShift ? input.shift : true
+
+  return modOk && shiftOk && input.key.toLowerCase() === key
+}
+
+function findOwnerManifest(dimWin: DimensionsWindow, portalWidgetId: string): { manifest: WidgetManifest; ownerWidgetId: string } | null {
+  if (!dimWin.currentScene) return null
+  const oid = ownerWidgetId(portalWidgetId)
+  const widget = dimWin.currentScene.widgets.get(oid)
+  if (!widget) return null
+  return { manifest: widget.manifest, ownerWidgetId: oid }
+}
 
 // ── Late-bound window getter (avoids circular dependency with window-manager) ──
 
@@ -303,12 +335,32 @@ function wireContentWCVEvents(
     notifyPortalStateChange(portal)
   })
 
-  // ── Copy/paste: let standard editing shortcuts pass through to Chromium ──
-  wc.on('before-input-event', (_event, input) => {
+  // ── Keyboard: editing shortcuts + widget-declared shortcuts ──
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+
+    // Let standard editing shortcuts pass through to Chromium
     if (input.meta || input.control) {
       const key = input.key.toLowerCase()
-      if (['c', 'v', 'x', 'a', 'z'].includes(key)) {
-        return // Don't prevent default — Chromium handles natively
+      if (['c', 'v', 'x', 'a', 'z'].includes(key)) return
+    }
+
+    // Check widget-declared shortcuts
+    const owner = findOwnerManifest(dimWin, portal.widgetId)
+    if (!owner?.manifest.shortcuts) return
+
+    for (const shortcut of owner.manifest.shortcuts) {
+      if (matchAccelerator(shortcut.key, input)) {
+        event.preventDefault()
+        if (!dimWin.sceneWCV.webContents.isDestroyed()) {
+          dimWin.sceneWCV.webContents.send('scene:widget-shortcut', {
+            widgetId: owner.ownerWidgetId,
+            action: shortcut.action,
+          })
+          // Focus scene WCV so the compound iframe can grab input focus (e.g. URL bar)
+          dimWin.sceneWCV.webContents.focus()
+        }
+        return
       }
     }
   })
@@ -429,6 +481,9 @@ function closeTabInternal(
 
       const rect = portalRect(dimWin, portal.widgetId)
       if (rect) newActiveTab.contentWCV.setBounds(rect)
+
+      // Focus the new active tab so keyboard shortcuts continue to work
+      try { newActiveTab.contentWCV.webContents.focus() } catch {}
     }
 
     notifyPortalStateChange(portal)

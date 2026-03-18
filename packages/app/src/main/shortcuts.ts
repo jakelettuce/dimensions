@@ -200,8 +200,8 @@ export function registerShortcuts(db: Database): void {
     {
       label: 'File',
       submenu: [
-        { label: 'New Window', accelerator: 'CmdOrCtrl+N', click: handleNewWindow },
-        { label: 'New Scene', accelerator: 'CmdOrCtrl+T', click: handleNewScene },
+        { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: handleNewWindow },
+        { label: 'New Scene', accelerator: 'CmdOrCtrl+N', click: handleNewScene },
         { type: 'separator' },
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+S', click: handleToggleSidebar },
         { type: 'separator' },

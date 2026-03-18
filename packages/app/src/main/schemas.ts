@@ -51,6 +51,11 @@ export const CompoundChildSchema = z.object({
   layout: CompoundChildLayoutSchema,
 })
 
+export const WidgetShortcutSchema = z.object({
+  key: z.string(),      // Accelerator: "CmdOrCtrl+T", "CmdOrCtrl+W", "CmdOrCtrl+Shift+R"
+  action: z.string(),   // Action name dispatched to widget SDK
+})
+
 export const WidgetManifestSchema = z.object({
   id: z.string(),
   type: z.enum(['custom', 'webportal', 'terminal', 'compound']),
@@ -62,6 +67,7 @@ export const WidgetManifestSchema = z.object({
   url: z.string().optional(), // default URL for webportal widgets
   targetPortals: z.array(z.string()).optional(), // portal-control: allowed portal widget IDs
   children: z.array(CompoundChildSchema).optional(), // compound widget children
+  shortcuts: z.array(WidgetShortcutSchema).optional(), // keyboard shortcuts when widget is focused
   inputs: z.array(WidgetInputSchema).optional(),
   outputs: z.array(WidgetOutputSchema).optional(),
   props: z.array(WidgetPropSchema).optional(),

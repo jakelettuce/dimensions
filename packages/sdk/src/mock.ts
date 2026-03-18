@@ -71,6 +71,7 @@ export function createMockSDK(overrides?: Partial<DimensionsSDK>): DimensionsSDK
       write: async () => {},
     },
     notify: async () => {},
+    onShortcut: () => {},
     ...overrides,
   }
 }

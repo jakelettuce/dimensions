@@ -561,19 +561,33 @@ Widgets request access to specific keys. User approves per-widget.
 
 ---
 
-## 10. CLAUDE.md Auto-Generation
+## 10. AI Agent Context Files (Auto-Generated)
 
-Every scene folder gets a `CLAUDE.md` that Claude Code reads automatically. Regenerated when a scene opens and after each build.
+Every scene folder gets auto-generated context files that AI coding tools read automatically. The same content is written to multiple filenames so every major tool finds it:
+
+| File | Tool |
+|---|---|
+| `CLAUDE.md` | Claude Code |
+| `AGENTS.md` | OpenAI Codex CLI |
+| `GEMINI.md` | Google Gemini CLI |
+| `.cursorrules` | Cursor |
+| `CONTEXT.md` | Generic / other tools |
+
+All files are identical — generated from a single source in `agent-context.ts`. To update what agents see, edit `generateAgentContextContent()` in one place. To add a new tool, add one filename to the `AGENT_CONTEXT_FILES` array and `.gitignore`.
+
+Regenerated when a scene opens and after each widget build.
 
 Contents:
 - Scene title, active widgets with IDs/types/positions
-- Full `@dimensions/sdk` API reference
+- Full `@dimensions/sdk` API reference (all methods with signatures)
 - Widget manifest schema
+- Compound widget docs with step-by-step browser example
 - Dataflow wiring format
 - Webportal CSS injection format
+- Layout system docs (canvas mode + layout mode with examples)
 - Build conventions (file structure, esbuild expectations)
 
-This is what makes the AI-builds-your-interface loop work — Claude Code always has full context about the scene it's editing and the SDK it has access to.
+This is what makes the AI-builds-your-interface loop work — any AI coding tool always has full context about the scene it's editing and the SDK it has access to.
 
 ---
 

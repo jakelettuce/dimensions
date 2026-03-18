@@ -183,6 +183,9 @@ export interface DimensionsSDK {
     write(text: string): Promise<void>
   }
   notify(title: string, body?: string): Promise<void>
+
+  /** Register handler for a keyboard shortcut declared in the widget manifest. */
+  onShortcut(action: string, cb: () => void): void
 }
 
 export interface PortalState {

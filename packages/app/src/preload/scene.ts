@@ -160,6 +160,25 @@ ipcRenderer.on('scene:portal-state-update', (_e, data: {
   }
 })
 
+// ── Widget shortcut forwarding ──
+// Main process sends shortcut actions to the owning widget iframe.
+
+ipcRenderer.on('scene:widget-shortcut', (_e, data: { widgetId: string; action: string }) => {
+  const iframes = document.querySelectorAll('iframe[data-widget-id]')
+  for (const iframe of iframes) {
+    if ((iframe as HTMLIFrameElement).dataset.widgetId === data.widgetId) {
+      const contentWindow = (iframe as HTMLIFrameElement).contentWindow
+      if (contentWindow) {
+        contentWindow.postMessage(
+          { type: 'sdk-shortcut', action: data.action },
+          '*',
+        )
+      }
+      break
+    }
+  }
+})
+
 // ── Exposed API for scene runtime ──
 
 contextBridge.exposeInMainWorld('dimensionsScene', {

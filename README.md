@@ -68,7 +68,7 @@ Main Process (Node.js, trusted)
   │   ├── Single content WCV per portal (no built-in chrome — you build it)
   │   ├── Multi-tab support with per-tab navigation state
   │   ├── Pre-warmed WCV pool for instant portal creation
-  │   ├── CSS injection (dom-ready) + extraction (for Claude Code context)
+  │   ├── CSS injection (dom-ready) + extraction (for AI agent context)
   │   ├── Downloads (auto-save to ~/Downloads with notification)
   │   └── Context menu (copy, open in browser, save image)
   ├── File watcher → esbuild → hot reload (~100ms)
@@ -107,6 +107,10 @@ The **top bar** is always visible — scene title, dimension breadcrumbs, naviga
 **Use mode** (default): Scene fills the window below the top bar. The scene defines all interaction — the app imposes nothing.
 
 **Edit mode** (`Cmd+E`): Toolbar and right panel appear. Claude Code terminal (scoped to scene folder) or no-code properties panel. Widgets show drag/resize handles (canvas mode). Webportals freeze for interaction passthrough. All changes persist to disk.
+
+### AI agent context (multi-tool)
+
+Every scene auto-generates context files that AI coding tools read: `CLAUDE.md` (Claude Code), `AGENTS.md` (OpenAI Codex), `GEMINI.md` (Gemini CLI), `.cursorrules` (Cursor), `CONTEXT.md` (generic). All identical content from a single source — full SDK reference, widget manifest schema, compound widget examples, layout system docs. Whatever AI tool you use, it has full context.
 
 ### Widget SDK
 

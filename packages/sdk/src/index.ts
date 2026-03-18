@@ -124,6 +124,21 @@ window.addEventListener('message', (event) => {
   }
 })
 
+// ── Widget shortcut subscriptions ──
+
+const shortcutListeners = new Map<string, Array<() => void>>()
+
+window.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'sdk-shortcut') return
+  const { action } = event.data
+  const listeners = shortcutListeners.get(action)
+  if (listeners) {
+    for (const cb of listeners) {
+      try { cb() } catch {}
+    }
+  }
+})
+
 // ── Dataflow subscriptions ──
 
 const dataflowListeners = new Map<string, Array<(value: any) => void>>()
@@ -260,6 +275,14 @@ export const sdk: DimensionsSDK = {
 
   // notifications — requires "notifications"
   notify: (title: string, body?: string) => call('sdk:notify', title, body),
+
+  // Widget shortcuts — declared in manifest, dispatched when widget is focused
+  onShortcut: (action: string, cb: () => void) => {
+    if (!shortcutListeners.has(action)) {
+      shortcutListeners.set(action, [])
+    }
+    shortcutListeners.get(action)!.push(cb)
+  },
 }
 
 // Default export for convenience

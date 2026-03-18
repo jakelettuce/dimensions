@@ -5,7 +5,7 @@ import { DIMENSIONS_DIR } from './constants'
 import { assertPathWithin } from './ipc-safety'
 import { findWindowByWebContentsId } from './window-manager'
 import { buildWidget, resolveWidgetSrcDir, resolveWidgetId } from './builder'
-import { generateClaudeMd } from './claude-md'
+import { writeAgentContextFiles } from './agent-context'
 import { loadSceneFromDisk, createScene, createDimension } from './scene-manager'
 import { sanitizeIpcData } from './ipc-safety'
 
@@ -196,7 +196,7 @@ export function registerFileOperationHandlers(): void {
             const dimensionId = dimWin.currentScene.dimensionId
             const dimensionPath = dimWin.currentScene.dimensionPath
             dimWin.currentScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
-            generateClaudeMd(dimWin.currentScene)
+            writeAgentContextFiles(dimWin.currentScene)
 
             // Notify renderer of build status
             dimWin.browserWindow.webContents.send('widget:build-status', sanitizeIpcData({

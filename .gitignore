@@ -120,9 +120,14 @@ blobs/
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# ── Claude Code ──
-# Auto-generated scene context files (runtime only)
+# ── AI Agent Context Files ──
+# Auto-generated per scene for all AI coding tools (all identical content).
+# See packages/app/src/main/agent-context.ts for the generator.
 CLAUDE.md
+AGENTS.md
+GEMINI.md
+.cursorrules
+CONTEXT.md
 
 # ── Misc ──
 *.pid

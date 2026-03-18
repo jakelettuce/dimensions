@@ -13,7 +13,7 @@ import { sanitizeIpcData } from './ipc-safety'
 import { buildWidget } from './builder'
 import { destroyTerminalsForWindow } from './terminal'
 import { repositionPortals, freezePortals, mountAllWebportals, destroyAllPortals, setSceneScroll } from './webportal-manager'
-import { generateClaudeMd } from './claude-md'
+import { writeAgentContextFiles } from './agent-context'
 import { resolveRoute } from './protocol'
 import type { Bounds } from './schemas'
 import type { Database } from 'sql.js'
@@ -284,7 +284,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
 
       // Generate CLAUDE.md for Claude Code context
       if (dimWin.currentScene) {
-        generateClaudeMd(dimWin.currentScene)
+        writeAgentContextFiles(dimWin.currentScene)
       }
     }).catch((err) => {
       console.error('Widget initial build error:', err)
@@ -315,7 +315,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
             // Regenerate scene state and CLAUDE.md
             const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
             dimWin.currentScene = updatedScene
-            generateClaudeMd(updatedScene)
+            writeAgentContextFiles(updatedScene)
           }
         } else {
           console.error(`Widget ${widgetTypeId} build failed:`, error)
@@ -342,7 +342,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
           try {
             const updatedScene = loadSceneFromDisk(scenePath, dimensionId, dimensionPath)
             dimWin.currentScene = updatedScene
-            generateClaudeMd(updatedScene)
+            writeAgentContextFiles(updatedScene)
           } catch {}
           return
         }
@@ -356,7 +356,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
           const sceneUrl = `dimensions-asset://${sceneRelative.split(path.sep).join('/')}`
 
           dimWin.sceneWCV.webContents.loadURL(sceneUrl)
-          generateClaudeMd(updatedScene)
+          writeAgentContextFiles(updatedScene)
 
           if (!dimWin.browserWindow.isDestroyed()) {
             dimWin.browserWindow.webContents.send('scene-updated', sanitizeIpcData({
@@ -407,7 +407,7 @@ export function loadSceneIntoWindow(dimWin: DimensionsWindow, scenePath: string,
             })
           }
 
-          generateClaudeMd(updatedScene)
+          writeAgentContextFiles(updatedScene)
 
           if (!dimWin.browserWindow.isDestroyed()) {
             dimWin.browserWindow.webContents.send('scene-changed', sanitizeIpcData({
